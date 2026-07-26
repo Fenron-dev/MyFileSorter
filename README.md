@@ -9,12 +9,15 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - lokale Vorschläge aus Dateinamen und Tags
 - explizite Nutzerbestätigung pro Hörbuch
 - konfliktfreier Dry-Run-Operationsplan
+- ausdrücklich bestätigte, journalisierte Ausführung
+- SHA-256-Prüfung jeder Kopie, bevor die Quelldatei entfernt wird
+- Undo, solange die importierten Zieldateien unverändert sind
 - bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
 - auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten
 - GitHub-Actions-Builds für macOS, Linux und Windows
 
-Dateien werden in diesem Inkrement noch nicht verschoben. Erst ein späteres Inkrement ergänzt die journalisierte Ausführung mit Prüfsumme und Undo. Online-Anfragen finden ausschließlich nach Auswahl eines Anbieters durch den Nutzer statt.
+Dateien werden erst nach Bestätigung des Zielplans verschoben. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online-Anfragen finden ausschließlich nach Auswahl eines Anbieters durch den Nutzer statt.
 
 ## Zielstruktur
 

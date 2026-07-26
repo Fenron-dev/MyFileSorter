@@ -1,4 +1,4 @@
-const state = { proposals: [], selectedId: null };
+const state = { proposals: [], selectedId: null, lastPlan: null, lastExecution: null };
 
 const $ = (selector) => document.querySelector(selector);
 const api = () => window.go?.main?.App || browserPreviewAPI;
@@ -109,6 +109,22 @@ const browserPreviewAPI = {
       executable: operations.length > 0,
     };
   },
+  async ExecutePlan() {
+    return {
+      journalId: "browser-preview-journal", status: "completed",
+      completed: state.lastPlan?.operations.length || 0,
+      total: state.lastPlan?.operations.length || 0,
+      totalBytes: state.lastPlan?.totalBytes || 0,
+      warnings: ["Browser-Vorschau: Es wurden keine Dateien verändert."],
+    };
+  },
+  async UndoExecution(journalId) {
+    return {
+      journalId, status: "undone", completed: 0,
+      total: state.lastPlan?.operations.length || 0, totalBytes: 0,
+      warnings: ["Browser-Vorschau: Es wurden keine Dateien verändert."],
+    };
+  },
 };
 
 function escapeHTML(value = "") {
@@ -132,6 +148,7 @@ function statusLabel(status) {
     review_required: "Prüfen",
     confirmed: "Bestätigt",
     excluded: "Ausgeschlossen",
+    imported: "Importiert",
     conflict: "Konflikt",
     error: "Fehler",
   }[status] || status;
@@ -395,6 +412,8 @@ async function buildPlan() {
   if (!target) return toast("Bitte einen Zielordner auswählen.", true);
   try {
     const plan = await api().BuildPlan(target);
+    state.lastPlan = plan;
+    state.lastExecution = null;
     const output = $("#plan-output");
     output.innerHTML = `
       <div class="plan-summary ${plan.executable ? "ready" : "blocked"}">
@@ -403,10 +422,95 @@ async function buildPlan() {
       </div>
       ${plan.warnings?.length ? `<div class="warning-list">${plan.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
       <div class="operation-list">${plan.operations.map((op) => `<div><span>${escapeHTML(op.source)}</span><b>→</b><strong>${escapeHTML(op.target)}</strong></div>`).join("")}</div>
-      <p class="dry-run-note">Nur Vorschau: In diesem Inkrement werden keine Dateien verändert.</p>
+      ${plan.executable ? `
+        <div class="execution-box">
+          <label><input type="checkbox" id="execution-consent" /> Ich habe Quelle und Ziel geprüft und möchte die angezeigten Dateien verschieben.</label>
+          <button class="primary compact" id="execute-plan" disabled>Import ausführen</button>
+        </div>
+        <p class="dry-run-note">Die Quelle wird erst nach vollständiger Kopie und erfolgreichem SHA-256-Vergleich entfernt.</p>
+      ` : `<p class="dry-run-note">Konflikte müssen vor der Ausführung behoben werden.</p>`}
     `;
+    if (plan.executable) {
+      const consent = $("#execution-consent");
+      const execute = $("#execute-plan");
+      consent.addEventListener("change", () => { execute.disabled = !consent.checked; });
+      execute.addEventListener("click", executePlan);
+    }
   } catch (error) {
     toast(String(error), true);
+  }
+}
+
+async function executePlan() {
+  const target = $("#target").value.trim();
+  const count = state.lastPlan?.operations.length || 0;
+  if (!count) return toast("Bitte zuerst einen ausführbaren Plan erstellen.", true);
+  if (!window.confirm(`${count} Datei${count === 1 ? "" : "en"} jetzt in den Zielordner verschieben?`)) return;
+  const button = $("#execute-plan");
+  button.disabled = true;
+  button.textContent = "Import läuft …";
+  try {
+    const result = await api().ExecutePlan(target);
+    state.lastExecution = result;
+    renderExecutionResult(result);
+    if (result.status === "completed") {
+      state.proposals.filter((item) => item.status === "confirmed").forEach((item) => { item.status = "imported"; });
+      renderList();
+      toast("Import erfolgreich abgeschlossen.");
+    } else {
+      if (result.completed > 0) {
+        state.proposals.filter((item) => item.status === "confirmed").forEach((item) => { item.status = "error"; });
+        renderList();
+      }
+      toast(result.error || "Der Import wurde nicht vollständig abgeschlossen.", true);
+    }
+  } catch (error) {
+    toast(String(error), true);
+    button.disabled = false;
+    button.textContent = "Import ausführen";
+  }
+}
+
+function renderExecutionResult(result) {
+  const output = $("#plan-output");
+  const successful = result.status === "completed";
+  const undone = result.status === "undone";
+  const canUndo = !undone && result.completed > 0 && result.journalId;
+  output.innerHTML = `
+    <div class="plan-summary ${successful || undone ? "ready" : "blocked"}">
+      <strong>${successful ? "Import abgeschlossen" : undone ? "Import rückgängig gemacht" : "Import unterbrochen"}</strong>
+      <span>${result.completed} von ${result.total} Operationen · ${formatBytes(result.totalBytes)}</span>
+    </div>
+    ${result.error ? `<div class="warning-list">${escapeHTML(result.error)}</div>` : ""}
+    ${result.warnings?.length ? `<div class="notice execution-notice">${result.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
+    <p class="journal-id">Journal: ${escapeHTML(result.journalId)}</p>
+    ${canUndo ? `<div class="undo-box"><span>Undo ist möglich, solange keine Zieldatei verändert wurde.</span><button class="ghost danger" id="undo-execution">Import rückgängig machen</button></div>` : ""}
+  `;
+  $("#undo-execution")?.addEventListener("click", undoExecution);
+}
+
+async function undoExecution() {
+  const result = state.lastExecution;
+  if (!result?.journalId) return;
+  if (!window.confirm("Alle unveränderten Dateien dieses Imports an ihren ursprünglichen Ort zurückverschieben?")) return;
+  const button = $("#undo-execution");
+  button.disabled = true;
+  button.textContent = "Undo läuft …";
+  try {
+    const undone = await api().UndoExecution(result.journalId);
+    state.lastExecution = undone;
+    renderExecutionResult(undone);
+    if (undone.status === "undone") {
+      state.proposals.filter((item) => item.status === "imported" || item.status === "error").forEach((item) => { item.status = "confirmed"; });
+      renderList();
+      toast("Import wurde rückgängig gemacht.");
+    } else {
+      toast(undone.error || "Undo konnte nicht abgeschlossen werden.", true);
+    }
+  } catch (error) {
+    toast(String(error), true);
+    button.disabled = false;
+    button.textContent = "Import rückgängig machen";
   }
 }
 

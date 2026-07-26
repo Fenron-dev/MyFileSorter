@@ -8,6 +8,7 @@ const (
 	StatusReviewRequired ProposalStatus = "review_required"
 	StatusConfirmed      ProposalStatus = "confirmed"
 	StatusExcluded       ProposalStatus = "excluded"
+	StatusImported       ProposalStatus = "imported"
 	StatusConflict       ProposalStatus = "conflict"
 	StatusError          ProposalStatus = "error"
 )
@@ -97,6 +98,16 @@ type OperationPlan struct {
 	TotalBytes int64              `json:"totalBytes"`
 	Warnings   []string           `json:"warnings"`
 	Executable bool               `json:"executable"`
+}
+
+type ExecutionResult struct {
+	JournalID  string   `json:"journalId"`
+	Status     string   `json:"status"`
+	Completed  int      `json:"completed"`
+	Total      int      `json:"total"`
+	TotalBytes int64    `json:"totalBytes"`
+	Error      string   `json:"error,omitempty"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 type MetadataSearchQuery struct {

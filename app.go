@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/dennis/myfilesorter/internal/domain"
+	"github.com/dennis/myfilesorter/internal/executor"
 	"github.com/dennis/myfilesorter/internal/metadata"
 	"github.com/dennis/myfilesorter/internal/planner"
 	"github.com/dennis/myfilesorter/internal/providers"
@@ -18,16 +19,20 @@ type App struct {
 	ctx       context.Context
 	scanner   *scanner.Scanner
 	providers *providers.Registry
+	executor  *executor.Service
 	mu        sync.RWMutex
 	proposals []domain.BookProposal
 	matches   map[string]map[string]domain.MetadataCandidate
+	executed  map[string][]string
 }
 
 func NewApp() *App {
 	return &App{
 		scanner:   scanner.New(metadata.NewFFProbeReader()),
 		providers: providers.NewRegistry(nil),
+		executor:  executor.New(""),
 		matches:   make(map[string]map[string]domain.MetadataCandidate),
+		executed:  make(map[string][]string),
 	}
 }
 
@@ -108,6 +113,48 @@ func (a *App) BuildPlan(target string) (domain.OperationPlan, error) {
 	proposals := cloneProposals(a.proposals)
 	a.mu.RUnlock()
 	return planner.Build(target, proposals)
+}
+
+func (a *App) ExecutePlan(target string) (domain.ExecutionResult, error) {
+	a.mu.RLock()
+	proposals := cloneProposals(a.proposals)
+	a.mu.RUnlock()
+	plan, err := planner.Build(target, proposals)
+	if err != nil {
+		return domain.ExecutionResult{}, err
+	}
+	if !plan.Executable {
+		return domain.ExecutionResult{}, fmt.Errorf("der aktuelle Plan enthält Konflikte und kann nicht ausgeführt werden")
+	}
+	result, err := a.executor.Execute(a.ctx, plan)
+	if result.JournalID != "" {
+		proposalIDs := uniqueProposalIDs(plan.Operations)
+		a.mu.Lock()
+		a.executed[result.JournalID] = proposalIDs
+		if result.Status == "completed" {
+			setStatuses(a.proposals, proposalIDs, domain.StatusImported)
+		} else if result.Completed > 0 {
+			setExecutionFailure(a.proposals, proposalIDs, result.JournalID)
+		}
+		a.mu.Unlock()
+		return result, nil
+	}
+	return result, err
+}
+
+func (a *App) UndoExecution(journalID string) (domain.ExecutionResult, error) {
+	result, err := a.executor.Undo(a.ctx, journalID)
+	if result.Status == "undone" {
+		a.mu.Lock()
+		setStatuses(a.proposals, a.executed[journalID], domain.StatusConfirmed)
+		clearExecutionWarnings(a.proposals, a.executed[journalID])
+		delete(a.executed, journalID)
+		a.mu.Unlock()
+	}
+	if result.JournalID != "" {
+		return result, nil
+	}
+	return result, err
 }
 
 func (a *App) SearchOnline(id, provider, region string) ([]domain.MetadataCandidate, error) {
@@ -242,4 +289,60 @@ func cloneProposal(input domain.BookProposal) domain.BookProposal {
 	}
 	input.Metadata.Evidence = evidence
 	return input
+}
+
+func uniqueProposalIDs(operations []domain.PlannedOperation) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0)
+	for _, operation := range operations {
+		if !seen[operation.ProposalID] {
+			seen[operation.ProposalID] = true
+			result = append(result, operation.ProposalID)
+		}
+	}
+	return result
+}
+
+func setStatuses(proposals []domain.BookProposal, proposalIDs []string, status domain.ProposalStatus) {
+	selected := make(map[string]bool, len(proposalIDs))
+	for _, id := range proposalIDs {
+		selected[id] = true
+	}
+	for index := range proposals {
+		if selected[proposals[index].ID] {
+			proposals[index].Status = status
+		}
+	}
+}
+
+func setExecutionFailure(proposals []domain.BookProposal, proposalIDs []string, journalID string) {
+	selected := make(map[string]bool, len(proposalIDs))
+	for _, id := range proposalIDs {
+		selected[id] = true
+	}
+	for index := range proposals {
+		if selected[proposals[index].ID] {
+			proposals[index].Status = domain.StatusError
+			proposals[index].Warnings = append(proposals[index].Warnings, "Import wurde unterbrochen. Nutze das Journal "+journalID+" für Undo.")
+		}
+	}
+}
+
+func clearExecutionWarnings(proposals []domain.BookProposal, proposalIDs []string) {
+	selected := make(map[string]bool, len(proposalIDs))
+	for _, id := range proposalIDs {
+		selected[id] = true
+	}
+	for index := range proposals {
+		if !selected[proposals[index].ID] {
+			continue
+		}
+		warnings := proposals[index].Warnings[:0]
+		for _, warning := range proposals[index].Warnings {
+			if !strings.HasPrefix(warning, "Import wurde unterbrochen.") {
+				warnings = append(warnings, warning)
+			}
+		}
+		proposals[index].Warnings = warnings
+	}
 }

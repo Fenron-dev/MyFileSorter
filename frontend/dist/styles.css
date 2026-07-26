@@ -57,9 +57,11 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .status-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #b98c44; }
 .status-dot.confirmed { background: #4b9872; }
 .status-dot.excluded { background: #999; }
+.status-dot.imported { background: #3476a8; }
 .status-pill { padding: 5px 8px; border-radius: 20px; color: #7b5a20; background: #f3e3bd; font-size: 9px; font-weight: 900; letter-spacing: .05em; text-transform: uppercase; }
 .status-pill.confirmed { color: #2e6950; background: #d9ecdf; }
 .status-pill.excluded { color: #666; background: #e5e3df; }
+.status-pill.imported { color: #24577d; background: #dcebf5; }
 .detail { padding: 28px 30px; overflow: auto; }
 .detail.empty { display: grid; place-items: center; color: #8a857d; }
 .detail-header { display: flex; justify-content: space-between; align-items: start; padding-bottom: 20px; border-bottom: 1px solid #e0dbd2; }
@@ -108,6 +110,12 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .operation-list { margin-top: 12px; max-height: 320px; overflow: auto; border: 1px solid #d8d2c8; border-radius: 10px; background: #fbfaf6; }
 .operation-list div { padding: 11px 13px; display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; border-bottom: 1px solid #e4dfd6; font-size: 10px; }
 .operation-list span { color: #89847b; }
+.execution-box { margin-top: 14px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid #c8d5ce; border-radius: 10px; background: #f4f8f5; }
+.execution-box label { display: flex; align-items: center; gap: 10px; color: #4d5c56; font-size: 12px; line-height: 1.45; }
+.execution-box input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: #204e43; }
+.execution-notice { margin-top: 12px; }
+.journal-id { color: #8b857b; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
+.undo-box { padding: 14px 0; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #69736e; font-size: 11px; }
 .toast { position: fixed; right: 24px; bottom: 24px; max-width: 430px; padding: 13px 17px; color: #fff; border-radius: 9px; background: #234f44; box-shadow: 0 12px 40px rgba(0,0,0,.2); font-size: 12px; z-index: 10; }
 .toast.error { background: #8b3f38; }
 

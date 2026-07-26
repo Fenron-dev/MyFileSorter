@@ -14,7 +14,8 @@ MyFileSorter arbeitet standardmäßig vollständig lokal. Ein Scan löst weder N
 6. Bei Bedarf später Audible/Google Books manuell abfragen.
 7. Bei Bedarf später AI zur strukturierten Erkennung und Suchanfragebildung verwenden.
 8. Nur bestätigte Vorschläge in den Operationsplan aufnehmen.
-9. Vor der späteren Ausführung Quelle, Ziel, Kollisionen und verfügbaren Speicher prüfen.
+9. Vor der Ausführung Quelle, Ziel und Kollisionen erneut prüfen.
+10. Nach ausdrücklicher Bestätigung journalisiert kopieren, per SHA-256 prüfen und erst dann die Quelle entfernen.
 
 ## Statusmodell
 
@@ -64,11 +65,11 @@ Umgesetzt sind Audible Deutschland und Google Books. Audible verwendet denselben
 
 Das LLM erhält nur Dateinamen und ausgewählte Metadaten, niemals Audiodaten. Es liefert strukturiert vermutete Felder und Suchanfragen. Ein anschließender Katalogabgleich und die Nutzerbestätigung bleiben erforderlich.
 
-## Sichere Ausführung (Folgeinkrement)
+## Sichere Ausführung
 
 - Dry Run ist der Standard.
-- Gleiches Dateisystem: atomare Umbenennung, soweit möglich.
-- Dateisystemgrenze: kopieren, Prüfsumme vergleichen, finalisieren, Quelle entfernen.
+- Die Datei wird unabhängig vom Dateisystem zunächst temporär kopiert.
+- Quelle und Kopie werden per SHA-256 verglichen, die Kopie atomar finalisiert und erst danach die Quelle entfernt.
 - Jede Operation wird journalisiert.
 - Undo ist erlaubt, solange das Ziel nicht nachträglich verändert wurde.
 - Konflikte und unsichere Vorschläge blockieren die automatische Ausführung.
