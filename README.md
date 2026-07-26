@@ -1,0 +1,37 @@
+# MyFileSorter
+
+MyFileSorter ist eine lokale Desktop-Anwendung, die unsortierte Hörbücher prüft und einen sicheren Zielplan für Audiobookshelf erstellt.
+
+Der aktuelle Stand ist das erste ausführbare Inkrement:
+
+- rekursiver, rein lokaler Scan unterstützter Audiodateien
+- Auslesen eingebetteter Metadaten über ein optional vorhandenes `ffprobe`
+- lokale Vorschläge aus Dateinamen und Tags
+- explizite Nutzerbestätigung pro Hörbuch
+- konfliktfreier Dry-Run-Operationsplan
+- bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
+- auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
+- schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten
+- GitHub-Actions-Builds für macOS, Linux und Windows
+
+Dateien werden in diesem Inkrement noch nicht verschoben. Erst ein späteres Inkrement ergänzt die journalisierte Ausführung mit Prüfsumme und Undo. Online-Anfragen finden ausschließlich nach Auswahl eines Anbieters durch den Nutzer statt.
+
+## Zielstruktur
+
+```text
+Mit Serie:
+Autor/Serie/01 - Buchtitel/01 - Buchtitel.m4b
+
+Ohne Serie:
+Autor/Buchtitel/01 - Buchtitel.m4b
+```
+
+## Entwicklung
+
+Alle Builds sind für GitHub Actions vorgesehen. Lokal müssen für die Bearbeitung keine Abhängigkeiten installiert und keine Binärdateien erzeugt werden.
+
+Die Workflows werden aktiv, sobald dieses Repository mit einem GitHub-Remote verbunden und gepusht wurde. Der Build verwendet die stabile Wails-Version `v2.12.0` und erzeugt Artefakte für Linux x64, Windows x64 sowie macOS auf Apple Silicon und Intel.
+
+`ffprobe` ist für den ersten Stand optional. Ist es auf dem Zielsystem vorhanden, liest die App damit ID3-/MP4-Metadaten; andernfalls arbeitet sie ausschließlich mit lokalen Datei- und Ordnernamen weiter.
+
+Die Architektur- und Produktentscheidungen stehen in [docs/CONCEPT.md](docs/CONCEPT.md).

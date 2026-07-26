@@ -1,0 +1,55 @@
+name: Desktop builds
+
+on:
+  push:
+    branches: [main, 'codex/**']
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            os: ubuntu-24.04
+            artifact: MyFileSorter-linux-x64
+            command: wails build -clean -tags webkit2_41
+          - name: Windows x64
+            os: windows-latest
+            artifact: MyFileSorter-windows-x64
+            command: wails build -clean
+          - name: macOS Apple Silicon
+            os: macos-15
+            artifact: MyFileSorter-macos-arm64
+            command: wails build -clean
+          - name: macOS Intel
+            os: macos-15-intel
+            artifact: MyFileSorter-macos-x64
+            command: wails build -clean
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux WebKit dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+          cache: false
+      - name: Install pinned Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+      - name: Build native application
+        run: ${{ matrix.command }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: build/bin/**
+          if-no-files-found: error
+          retention-days: 14

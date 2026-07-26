@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>MyFileSorter</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand-mark" aria-hidden="true">M</div>
+        <div>
+          <p class="eyebrow">AUDIOBOOKSHELF PREPARATION</p>
+          <h1>MyFileSorter</h1>
+        </div>
+        <div class="local-badge"><span></span> Lokal zuerst</div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <p class="step-label">01 · EINGANG</p>
+            <h2>Unsortierte Hörbücher<br />sicher vorbereiten.</h2>
+            <p class="hero-copy">Der erste Scan bleibt vollständig auf diesem Gerät. Du entscheidest über jeden Vorschlag, bevor ein Zielplan entsteht.</p>
+          </div>
+          <div class="source-panel">
+            <label for="source">Quellordner</label>
+            <div class="path-row">
+              <input id="source" placeholder="Ordner mit unsortierten Hörbüchern" />
+              <button class="icon-button" id="choose-source" title="Quellordner auswählen">…</button>
+            </div>
+            <button class="primary" id="scan">Lokal scannen <span>→</span></button>
+            <p class="privacy-note">Keine Online- oder AI-Anfrage beim Scan.</p>
+          </div>
+        </section>
+
+        <section class="workspace hidden" id="workspace">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">02 · PRÜFUNG</p>
+              <h2>Lokale Vorschläge</h2>
+            </div>
+            <div class="summary" id="summary"></div>
+          </div>
+          <div class="notice hidden" id="notice"></div>
+          <div class="review-layout">
+            <aside class="book-list" id="book-list"></aside>
+            <section class="detail empty" id="detail">
+              <p>Wähle links ein Hörbuch aus.</p>
+            </section>
+          </div>
+        </section>
+
+        <section class="plan-section hidden" id="plan-section">
+          <div class="section-heading">
+            <div>
+              <p class="step-label">03 · ZIELPLAN</p>
+              <h2>Dry Run erstellen</h2>
+            </div>
+          </div>
+          <div class="plan-controls">
+            <div class="path-row">
+              <input id="target" placeholder="Zielordner der Audiobookshelf-Bibliothek" />
+              <button class="icon-button" id="choose-target" title="Zielordner auswählen">…</button>
+            </div>
+            <button class="secondary" id="build-plan">Operationsplan anzeigen</button>
+          </div>
+          <div id="plan-output"></div>
+        </section>
+      </main>
+    </div>
+    <div class="toast hidden" id="toast"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

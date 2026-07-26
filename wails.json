@@ -1,0 +1,12 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "MyFileSorter",
+  "outputfilename": "MyFileSorter",
+  "frontend:dir": "frontend",
+  "frontend:install": "",
+  "frontend:build": "",
+  "wailsjsdir": "frontend/wailsjs",
+  "author": {
+    "name": "Dennis"
+  }
+}
