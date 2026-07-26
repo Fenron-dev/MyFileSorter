@@ -1,4 +1,4 @@
-const state = { proposals: [], selectedId: null, lastPlan: null, lastPlanOptions: null, lastExecution: null };
+const state = { proposals: [], selectedId: null, lastPlan: null, lastPlanOptions: null, lastExecution: null, aiProfiles: [], aiSuggestions: {} };
 
 const $ = (selector) => document.querySelector(selector);
 const api = () => window.go?.main?.App || browserPreviewAPI;
@@ -61,6 +61,8 @@ const previewCandidates = {
     },
   ],
 };
+
+const previewAIProfiles = [{ id: "preview-ollama", name: "Lokales Ollama", provider: "ollama", baseUrl: "http://127.0.0.1:11434", model: "qwen3:8b", hasApiKey: false, isDefault: true }];
 
 const browserPreviewAPI = {
   async SelectDirectory(title) {
@@ -150,6 +152,42 @@ const browserPreviewAPI = {
         { timestamp: new Date().toISOString(), level: "info", component: "scan", message: "Lokaler Scan abgeschlossen", details: { books: "1", audioFiles: "2" } },
       ],
     };
+  },
+  async GetAIProfiles() { return structuredClone(previewAIProfiles); },
+  async SaveAIProfile(input) {
+    const profile = { ...input, id: input.id || `preview-${Date.now()}`, hasApiKey: Boolean(input.apiKey) };
+    delete profile.apiKey;
+    const index = previewAIProfiles.findIndex((item) => item.id === profile.id);
+    if (profile.isDefault) previewAIProfiles.forEach((item) => { item.isDefault = false; });
+    if (index >= 0) previewAIProfiles[index] = profile; else previewAIProfiles.push(profile);
+    return structuredClone(profile);
+  },
+  async DeleteAIProfile(id) {
+    const index = previewAIProfiles.findIndex((item) => item.id === id);
+    if (index >= 0) previewAIProfiles.splice(index, 1);
+  },
+  async TestAIProfile() {},
+  async AnalyzeWithAI(proposalId, profileId) {
+    const suggestion = {
+      proposalId, profileId, title: "Der Name des Windes", author: "Patrick Rothfuss",
+      series: "Die Königsmörder-Chronik", seriesSequence: "1", editionInfo: "Ungekürzt",
+      narrator: "Stefan Kaminski", language: "de", suggestedSearchTitle: "Der Name des Windes",
+      suggestedSearchAuthor: "Patrick Rothfuss", confidence: 0.92,
+      reasoning: "Ordnername, Dateinamen und vorhandene Album-Metadaten stimmen überein.",
+    };
+    state.aiSuggestions[proposalId] = suggestion;
+    return structuredClone(suggestion);
+  },
+  async ApplyAISuggestion(proposalId) {
+    const proposal = state.proposals.find((item) => item.id === proposalId);
+    const suggestion = state.aiSuggestions[proposalId];
+    const metadata = { ...proposal.metadata, evidence: { ...proposal.metadata.evidence } };
+    for (const key of ["title", "author", "series", "seriesSequence", "editionInfo", "narrator", "language"]) {
+      if (!suggestion?.[key]) continue;
+      metadata[key] = suggestion[key];
+      metadata.evidence[key] = { value: suggestion[key], source: `ai:${suggestion.profileId}`, confidence: suggestion.confidence };
+    }
+    return { ...proposal, metadata, confidence: suggestion.confidence, status: "review_required" };
   },
 };
 
@@ -421,8 +459,8 @@ function renderDetail() {
     ${renderCompanions(proposal.companions || [])}
     <div class="online-panel hidden" id="online-panel"></div>
     <div class="actions">
-      <button class="ghost" id="online" title="Folgt im nächsten Inkrement">Online suchen</button>
-      <button class="ghost" id="ai" title="Folgt im nächsten Inkrement">Mit AI analysieren</button>
+      <button class="ghost" id="online">Online suchen</button>
+      <button class="ghost" id="ai">Mit AI analysieren</button>
       <label class="ready-toggle"><input type="checkbox" id="detail-ready" ${proposal.status === "confirmed" || proposal.status === "imported" ? "checked" : ""} ${proposal.status === "imported" ? "disabled" : ""} /> Für Import auswählen</label>
       <span class="action-spacer"></span>
       <button class="ghost danger" id="exclude">Überspringen</button>
@@ -439,7 +477,7 @@ function renderDetail() {
   });
   $("#exclude").addEventListener("click", () => setStatus(proposal.id, "excluded"));
   $("#online").addEventListener("click", () => showProviderChoice(proposal));
-  $("#ai").addEventListener("click", () => toast("Die lokale AI-Eskalationsstufe folgt nach den Provider-Schnittstellen."));
+  $("#ai").addEventListener("click", () => showAIChoice(proposal));
 }
 
 async function toggleReady(id, checked) {
@@ -480,6 +518,77 @@ function showProviderChoice(proposal) {
   panel.querySelector(".audible-provider").addEventListener("click", () => searchOnline(proposal, "audible"));
   panel.querySelector(".google-provider").addEventListener("click", () => searchOnline(proposal, "google_books"));
   panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function showAIChoice(proposal) {
+  const panel = $("#online-panel");
+  panel.classList.remove("hidden");
+  panel.innerHTML = `<div class="online-loading"><span></span>AI-Profile werden geladen …</div>`;
+  try {
+    state.aiProfiles = await api().GetAIProfiles();
+    if (!state.aiProfiles.length) {
+      panel.innerHTML = `
+        <div class="online-heading"><div><p class="detail-kicker">BEWUSSTE AI-ANALYSE</p><strong>Noch kein AI-Profil</strong></div><button class="panel-close" aria-label="Schließen">×</button></div>
+        <p class="online-copy">Lege zuerst ein lokales Ollama-/LM-Studio-Profil oder eine OpenAI-kompatible Verbindung an.</p>
+        <button class="secondary open-profile-settings">AI-Profile verwalten</button>`;
+      panel.querySelector(".panel-close").addEventListener("click", () => panel.classList.add("hidden"));
+      panel.querySelector(".open-profile-settings").addEventListener("click", showAIProfiles);
+      return;
+    }
+    const defaultProfile = state.aiProfiles.find((item) => item.isDefault) || state.aiProfiles[0];
+    panel.innerHTML = `
+      <div class="online-heading"><div><p class="detail-kicker">BEWUSSTE AI-ANALYSE</p><strong>Analyseprofil wählen</strong></div><button class="panel-close" aria-label="Schließen">×</button></div>
+      <div class="ai-profile-select"><select id="analysis-profile">${state.aiProfiles.map((profile) => `<option value="${escapeHTML(profile.id)}" ${profile.id === defaultProfile.id ? "selected" : ""}>${escapeHTML(profile.name)} · ${escapeHTML(profile.model)}</option>`).join("")}</select><button class="ghost open-profile-settings">Profile</button></div>
+      <p class="ai-privacy">Gesendet werden nur der Ordnername, Dateinamen und ausgewählte vorhandene Metadaten – keine Audiodaten und keine vollständigen Dateipfade.</p>
+      <button class="primary compact" id="start-ai-analysis">Jetzt analysieren</button>`;
+    panel.querySelector(".panel-close").addEventListener("click", () => panel.classList.add("hidden"));
+    panel.querySelector(".open-profile-settings").addEventListener("click", showAIProfiles);
+    panel.querySelector("#start-ai-analysis").addEventListener("click", () => analyzeWithAI(proposal, panel.querySelector("#analysis-profile").value));
+  } catch (error) {
+    panel.innerHTML = `<div class="online-error"><strong>AI-Profile konnten nicht geladen werden</strong><p>${escapeHTML(String(error))}</p></div>`;
+  }
+}
+
+async function analyzeWithAI(proposal, profileId) {
+  const panel = $("#online-panel");
+  panel.innerHTML = `<div class="online-loading"><span></span>Lokale Textinformationen werden analysiert …</div>`;
+  try {
+    const suggestion = await api().AnalyzeWithAI(proposal.id, profileId);
+    state.aiSuggestions[proposal.id] = suggestion;
+    renderAISuggestion(proposal, suggestion);
+  } catch (error) {
+    panel.innerHTML = `<div class="online-error"><strong>AI-Analyse fehlgeschlagen</strong><p>${escapeHTML(String(error))}</p><button class="ghost retry-ai">Profil erneut wählen</button></div>`;
+    panel.querySelector(".retry-ai").addEventListener("click", () => showAIChoice(proposal));
+  }
+}
+
+function renderAISuggestion(proposal, suggestion) {
+  const panel = $("#online-panel");
+  const fields = [
+    ["Titel", suggestion.title], ["Autor", suggestion.author], ["Serie", suggestion.series],
+    ["Band", suggestion.seriesSequence], ["Info", suggestion.editionInfo], ["Sprecher", suggestion.narrator], ["Sprache", suggestion.language],
+  ].filter(([, value]) => value);
+  panel.innerHTML = `
+    <div class="online-heading"><div><p class="detail-kicker">AI-VORSCHLAG · ${Math.round(suggestion.confidence * 100)} %</p><strong>Vor Übernahme prüfen</strong></div><button class="panel-close" aria-label="Schließen">×</button></div>
+    <div class="ai-result"><div class="ai-result-grid">${fields.map(([label, value]) => `<div><span>${label}</span><strong>${escapeHTML(value)}</strong></div>`).join("")}</div>
+      ${suggestion.reasoning ? `<p class="ai-reasoning"><span>Begründung des Modells</span>${escapeHTML(suggestion.reasoning)}</p>` : ""}
+      <div class="actions"><button class="ghost retry-ai">Anderes Profil</button><span class="action-spacer"></span><button class="secondary apply-ai-audible">Übernehmen & Audible prüfen</button><button class="primary compact apply-ai">Als Vorschlag übernehmen</button></div>
+    </div>`;
+  panel.querySelector(".panel-close").addEventListener("click", () => panel.classList.add("hidden"));
+  panel.querySelector(".retry-ai").addEventListener("click", () => showAIChoice(proposal));
+  panel.querySelector(".apply-ai").addEventListener("click", () => applyAISuggestion(proposal.id, false));
+  panel.querySelector(".apply-ai-audible").addEventListener("click", () => applyAISuggestion(proposal.id, true));
+}
+
+async function applyAISuggestion(proposalId, searchAudible) {
+  try {
+    const updated = await api().ApplyAISuggestion(proposalId);
+    replaceProposal(updated);
+    toast("AI-Ergebnis als prüfbarer Vorschlag übernommen.");
+    if (searchAudible) await searchOnline(updated, "audible");
+  } catch (error) {
+    toast(String(error), true);
+  }
 }
 
 async function searchOnline(proposal, provider) {
@@ -708,11 +817,119 @@ async function undoExecution() {
   }
 }
 
+const aiProviderDefaults = {
+  ollama: "http://127.0.0.1:11434",
+  lmstudio: "http://127.0.0.1:1234/v1",
+  openai: "https://api.openai.com/v1",
+  openrouter: "https://openrouter.ai/api/v1",
+  groq: "https://api.groq.com/openai/v1",
+  openai_compatible: "",
+};
+
+async function showAIProfiles() {
+  $("#ai-profile-overlay").classList.remove("hidden");
+  try {
+    state.aiProfiles = await api().GetAIProfiles();
+    renderAIProfileList();
+    editAIProfile(state.aiProfiles.find((item) => item.isDefault) || state.aiProfiles[0] || null);
+  } catch (error) {
+    $("#ai-profile-list").innerHTML = `<div class="online-error">${escapeHTML(String(error))}</div>`;
+  }
+}
+
+function renderAIProfileList(activeId = document.querySelector('#ai-profile-form [name="id"]')?.value) {
+  const list = $("#ai-profile-list");
+  list.innerHTML = `<button class="secondary new-profile">+ Neues Profil</button>${state.aiProfiles.map((profile) => `
+    <button class="ai-profile-item ${profile.id === activeId ? "active" : ""}" data-profile-id="${escapeHTML(profile.id)}">
+      ${profile.isDefault ? `<span class="ai-profile-default">Standard</span>` : ""}<strong>${escapeHTML(profile.name)}</strong><small>${escapeHTML(profile.provider)} · ${escapeHTML(profile.model)}</small>
+    </button>`).join("")}`;
+  list.querySelector(".new-profile").addEventListener("click", () => editAIProfile(null));
+  list.querySelectorAll(".ai-profile-item").forEach((button) => button.addEventListener("click", () => editAIProfile(state.aiProfiles.find((item) => item.id === button.dataset.profileId))));
+}
+
+function editAIProfile(profile) {
+  const form = $("#ai-profile-form");
+  form.reset();
+  form.elements.id.value = profile?.id || "";
+  form.elements.name.value = profile?.name || "";
+  form.elements.provider.value = profile?.provider || "ollama";
+  form.elements.baseUrl.value = profile?.baseUrl || aiProviderDefaults[form.elements.provider.value];
+  form.elements.model.value = profile?.model || "";
+  form.elements.isDefault.checked = profile?.isDefault || !state.aiProfiles.length;
+  form.elements.clearApiKey.checked = false;
+  $("#ai-key-state").textContent = profile?.hasApiKey ? "Ein verschlüsselter Schlüssel ist gespeichert." : "Kein Schlüssel gespeichert; für lokale Anbieter meist nicht erforderlich.";
+  $("#delete-ai-profile").classList.toggle("hidden", !profile);
+  renderAIProfileList(profile?.id || "");
+}
+
+async function saveAIProfile(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const input = {
+    id: form.elements.id.value,
+    name: form.elements.name.value,
+    provider: form.elements.provider.value,
+    baseUrl: form.elements.baseUrl.value,
+    model: form.elements.model.value,
+    apiKey: form.elements.apiKey.value,
+    clearApiKey: form.elements.clearApiKey.checked,
+    isDefault: form.elements.isDefault.checked,
+  };
+  try {
+    const saved = await api().SaveAIProfile(input);
+    state.aiProfiles = await api().GetAIProfiles();
+    editAIProfile(saved);
+    form.elements.apiKey.value = "";
+    toast("AI-Profil lokal gespeichert.");
+  } catch (error) {
+    toast(String(error), true);
+  }
+}
+
+async function testAIProfile() {
+  const id = document.querySelector('#ai-profile-form [name="id"]').value;
+  if (!id) return toast("Bitte das Profil vor dem Verbindungstest speichern.", true);
+  const button = $("#test-ai-profile");
+  button.disabled = true;
+  button.textContent = "Test läuft …";
+  try {
+    await api().TestAIProfile(id);
+    toast("AI-Verbindung erfolgreich getestet.");
+  } catch (error) {
+    toast(String(error), true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Verbindung testen";
+  }
+}
+
+async function deleteAIProfile() {
+  const id = document.querySelector('#ai-profile-form [name="id"]').value;
+  if (!id || !window.confirm("Dieses AI-Profil einschließlich des gespeicherten Schlüssels löschen?")) return;
+  try {
+    await api().DeleteAIProfile(id);
+    state.aiProfiles = await api().GetAIProfiles();
+    renderAIProfileList();
+    editAIProfile(state.aiProfiles[0] || null);
+    toast("AI-Profil gelöscht.");
+  } catch (error) {
+    toast(String(error), true);
+  }
+}
+
 $("#choose-source").addEventListener("click", () => chooseDirectory($("#source"), "Quellordner auswählen"));
 $("#choose-target").addEventListener("click", () => chooseDirectory($("#target"), "Zielordner auswählen"));
 $("#scan").addEventListener("click", scan);
 $("#build-plan").addEventListener("click", buildPlan);
 $("#open-log").addEventListener("click", showSessionLog);
+$("#open-ai-profiles").addEventListener("click", showAIProfiles);
+$("#close-ai-profiles").addEventListener("click", () => $("#ai-profile-overlay").classList.add("hidden"));
+$("#ai-profile-form").addEventListener("submit", saveAIProfile);
+$("#test-ai-profile").addEventListener("click", testAIProfile);
+$("#delete-ai-profile").addEventListener("click", deleteAIProfile);
+$("#ai-profile-provider").addEventListener("change", (event) => {
+  document.querySelector('#ai-profile-form [name="baseUrl"]').value = aiProviderDefaults[event.target.value] || "";
+});
 $("#refresh-log").addEventListener("click", showSessionLog);
 $("#close-log").addEventListener("click", () => $("#log-overlay").classList.add("hidden"));
 [$("#book-number-width"), $("#track-number-width"), $("#audio-file-naming")].forEach((input) => {
@@ -754,6 +971,12 @@ setupFileDrop();
 $("#log-overlay").addEventListener("click", (event) => {
   if (event.target === $("#log-overlay")) $("#log-overlay").classList.add("hidden");
 });
+$("#ai-profile-overlay").addEventListener("click", (event) => {
+  if (event.target === $("#ai-profile-overlay")) $("#ai-profile-overlay").classList.add("hidden");
+});
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") $("#log-overlay").classList.add("hidden");
+  if (event.key === "Escape") {
+    $("#log-overlay").classList.add("hidden");
+    $("#ai-profile-overlay").classList.add("hidden");
+  }
 });

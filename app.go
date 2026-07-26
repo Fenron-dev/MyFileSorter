@@ -10,6 +10,7 @@ import (
 	"github.com/dennis/myfilesorter/internal/applog"
 	"github.com/dennis/myfilesorter/internal/domain"
 	"github.com/dennis/myfilesorter/internal/executor"
+	"github.com/dennis/myfilesorter/internal/llm"
 	"github.com/dennis/myfilesorter/internal/metadata"
 	"github.com/dennis/myfilesorter/internal/planner"
 	"github.com/dennis/myfilesorter/internal/providers"
@@ -22,11 +23,13 @@ type App struct {
 	scanner   *scanner.Scanner
 	providers *providers.Registry
 	executor  *executor.Service
+	ai        *llm.Service
 	logger    *applog.Logger
 	mu        sync.RWMutex
 	proposals []domain.BookProposal
 	matches   map[string]map[string]domain.MetadataCandidate
 	executed  map[string][]string
+	aiResults map[string]domain.AISuggestion
 }
 
 func NewApp() *App {
@@ -34,9 +37,11 @@ func NewApp() *App {
 		scanner:   scanner.New(metadata.NewFFProbeReader()),
 		providers: providers.NewRegistry(nil),
 		executor:  executor.New(""),
+		ai:        llm.New(""),
 		logger:    applog.New(""),
 		matches:   make(map[string]map[string]domain.MetadataCandidate),
 		executed:  make(map[string][]string),
+		aiResults: make(map[string]domain.AISuggestion),
 	}
 }
 
@@ -59,6 +64,7 @@ func (a *App) Scan(source string) (domain.ScanResult, error) {
 	a.mu.Lock()
 	a.proposals = cloneProposals(result.Proposals)
 	a.matches = make(map[string]map[string]domain.MetadataCandidate)
+	a.aiResults = make(map[string]domain.AISuggestion)
 	a.mu.Unlock()
 	a.logger.Info("scan", "Lokaler Scan abgeschlossen", map[string]string{
 		"source": result.Source, "books": strconv.Itoa(result.Summary.Books), "audioFiles": strconv.Itoa(result.Summary.Files),
@@ -286,6 +292,87 @@ func (a *App) GetSessionLog() domain.LogSnapshot {
 	return a.logger.Snapshot()
 }
 
+func (a *App) GetAIProfiles() ([]domain.AIProfile, error) {
+	return a.ai.Profiles()
+}
+
+func (a *App) SaveAIProfile(input domain.AIProfileInput) (domain.AIProfile, error) {
+	profile, err := a.ai.SaveProfile(input)
+	if err != nil {
+		a.logger.Error("ai.profile", "AI-Profil konnte nicht gespeichert werden", map[string]string{"provider": input.Provider, "error": err.Error()})
+		return domain.AIProfile{}, err
+	}
+	a.logger.Info("ai.profile", "AI-Profil gespeichert", map[string]string{
+		"profileId": profile.ID, "provider": profile.Provider, "model": profile.Model,
+	})
+	return profile, nil
+}
+
+func (a *App) DeleteAIProfile(id string) error {
+	if err := a.ai.DeleteProfile(id); err != nil {
+		a.logger.Error("ai.profile", "AI-Profil konnte nicht gelöscht werden", map[string]string{"profileId": id, "error": err.Error()})
+		return err
+	}
+	a.logger.Info("ai.profile", "AI-Profil gelöscht", map[string]string{"profileId": id})
+	return nil
+}
+
+func (a *App) TestAIProfile(id string) error {
+	a.logger.Info("ai.profile", "AI-Profiltest gestartet", map[string]string{"profileId": id})
+	if err := a.ai.TestProfile(a.ctx, id); err != nil {
+		a.logger.Error("ai.profile", "AI-Profiltest fehlgeschlagen", map[string]string{"profileId": id, "error": err.Error()})
+		return err
+	}
+	a.logger.Info("ai.profile", "AI-Profiltest erfolgreich", map[string]string{"profileId": id})
+	return nil
+}
+
+func (a *App) AnalyzeWithAI(proposalID, profileID string) (domain.AISuggestion, error) {
+	a.mu.RLock()
+	proposal, err := a.findProposal(proposalID)
+	if err != nil {
+		a.mu.RUnlock()
+		return domain.AISuggestion{}, err
+	}
+	input := cloneProposal(*proposal)
+	a.mu.RUnlock()
+	a.logger.Info("ai", "AI-Analyse gestartet", map[string]string{
+		"proposalId": proposalID, "profileId": profileID, "files": strconv.Itoa(len(input.Files)),
+	})
+	suggestion, err := a.ai.Analyze(a.ctx, profileID, input)
+	if err != nil {
+		a.logger.Error("ai", "AI-Analyse fehlgeschlagen", map[string]string{"proposalId": proposalID, "profileId": profileID, "error": err.Error()})
+		return domain.AISuggestion{}, err
+	}
+	a.mu.Lock()
+	a.aiResults[proposalID] = suggestion
+	a.mu.Unlock()
+	a.logger.Info("ai", "AI-Vorschlag empfangen", map[string]string{
+		"proposalId": proposalID, "profileId": profileID, "confidence": strconv.FormatFloat(suggestion.Confidence, 'f', 2, 64),
+	})
+	return suggestion, nil
+}
+
+func (a *App) ApplyAISuggestion(proposalID string) (domain.BookProposal, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	proposal, err := a.findProposal(proposalID)
+	if err != nil {
+		return domain.BookProposal{}, err
+	}
+	suggestion, found := a.aiResults[proposalID]
+	if !found {
+		return domain.BookProposal{}, fmt.Errorf("Für dieses Hörbuch liegt kein AI-Vorschlag vor")
+	}
+	applyAISuggestion(&proposal.Metadata, suggestion)
+	proposal.Status = domain.StatusReviewRequired
+	proposal.Confidence = suggestion.Confidence
+	a.logger.Info("ai", "AI-Vorschlag übernommen", map[string]string{
+		"proposalId": proposalID, "profileId": suggestion.ProfileID, "title": suggestion.Title,
+	})
+	return cloneProposal(*proposal), nil
+}
+
 func (a *App) findProposal(id string) (*domain.BookProposal, error) {
 	for index := range a.proposals {
 		if a.proposals[index].ID == id {
@@ -344,6 +431,34 @@ func applyCandidate(meta *domain.BookMetadata, candidate domain.MetadataCandidat
 		}
 		field.set(value)
 		meta.Evidence[field.key] = domain.Evidence{Value: value, Source: source, Confidence: candidate.Confidence}
+	}
+}
+
+func applyAISuggestion(meta *domain.BookMetadata, suggestion domain.AISuggestion) {
+	if meta.Evidence == nil {
+		meta.Evidence = make(map[string]domain.Evidence)
+	}
+	source := "ai:" + suggestion.ProfileID
+	fields := []struct {
+		key   string
+		value string
+		set   func(string)
+	}{
+		{"title", suggestion.Title, func(value string) { meta.Title = value }},
+		{"author", suggestion.Author, func(value string) { meta.Author = value }},
+		{"series", suggestion.Series, func(value string) { meta.Series = value }},
+		{"seriesSequence", suggestion.SeriesSequence, func(value string) { meta.SeriesSequence = value }},
+		{"editionInfo", suggestion.EditionInfo, func(value string) { meta.EditionInfo = value }},
+		{"narrator", suggestion.Narrator, func(value string) { meta.Narrator = value }},
+		{"language", suggestion.Language, func(value string) { meta.Language = value }},
+	}
+	for _, field := range fields {
+		value := strings.TrimSpace(field.value)
+		if value == "" {
+			continue
+		}
+		field.set(value)
+		meta.Evidence[field.key] = domain.Evidence{Value: value, Source: source, Confidence: suggestion.Confidence}
 	}
 }
 

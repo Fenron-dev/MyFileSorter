@@ -77,6 +77,8 @@ Umgesetzt sind Audible Deutschland und Google Books. Audible verwendet denselben
 
 Das LLM erhält nur Dateinamen und ausgewählte Metadaten, niemals Audiodaten. Es liefert strukturiert vermutete Felder und Suchanfragen. Ein anschließender Katalogabgleich und die Nutzerbestätigung bleiben erforderlich.
 
+Umgesetzt sind Profile für Ollama, LM Studio, OpenAI, OpenRouter, Groq und benutzerdefinierte OpenAI-kompatible Endpoints. Profile enthalten Anbieter, Endpoint und Modell; optionale API-Schlüssel werden lokal AES-GCM-verschlüsselt gespeichert und nie über die Profil-API oder das Sitzungslog ausgegeben. Die AI-Analyse übermittelt nur den Namen des Hörbuchordners, die Dateinamen, den lokalen Vorschlag und ausgewählte eingebettete Metadaten. Vollständige Pfade und Audiodaten bleiben lokal.
+
 ## Sichere Ausführung
 
 - Dry Run ist der Standard.

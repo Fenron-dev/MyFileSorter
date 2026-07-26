@@ -24,10 +24,15 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - wahlweise einheitliche Audiodateinamen oder bereinigte vorhandene Kapitelbezeichnungen
 - bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
 - auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
+- verwaltbare AI-Profile für Ollama, LM Studio, OpenAI, OpenRouter, Groq und OpenAI-kompatible Endpoints
+- bewusst ausgelöste AI-Analyse ausschließlich mit Ordner-/Dateinamen und ausgewählten Textmetadaten
+- prüfbare AI-Vorschläge mit optional anschließendem Audible-Abgleich
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten
 - GitHub-Actions-Builds für macOS, Linux und Windows
 
-Dateien werden erst nach Bestätigung des Zielplans verschoben. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online-Anfragen finden ausschließlich nach Auswahl eines Anbieters durch den Nutzer statt.
+Dateien werden erst nach Bestätigung des Zielplans verschoben. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online- und AI-Anfragen finden ausschließlich nach einer bewussten Auswahl durch den Nutzer statt.
+
+AI-Profile liegen im Benutzer-Konfigurationsordner. API-Schlüssel werden mit einem separat erzeugten lokalen AES-GCM-Tresorschlüssel verschlüsselt und weder an das Frontend zurückgegeben noch protokolliert. Für Ollama und LM Studio ist üblicherweise kein Schlüssel erforderlich.
 
 ## Zielstruktur
 

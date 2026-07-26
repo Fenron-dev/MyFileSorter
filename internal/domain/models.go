@@ -185,3 +185,40 @@ type MetadataCandidate struct {
 	DurationMinutes int     `json:"durationMinutes,omitempty"`
 	Confidence      float64 `json:"confidence"`
 }
+
+type AIProfile struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Provider  string `json:"provider"`
+	BaseURL   string `json:"baseUrl"`
+	Model     string `json:"model"`
+	HasAPIKey bool   `json:"hasApiKey"`
+	IsDefault bool   `json:"isDefault"`
+}
+
+type AIProfileInput struct {
+	ID          string `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Provider    string `json:"provider"`
+	BaseURL     string `json:"baseUrl"`
+	Model       string `json:"model"`
+	APIKey      string `json:"apiKey,omitempty"`
+	ClearAPIKey bool   `json:"clearApiKey,omitempty"`
+	IsDefault   bool   `json:"isDefault"`
+}
+
+type AISuggestion struct {
+	ProposalID          string  `json:"proposalId"`
+	ProfileID           string  `json:"profileId"`
+	Title               string  `json:"title"`
+	Author              string  `json:"author"`
+	Series              string  `json:"series,omitempty"`
+	SeriesSequence      string  `json:"seriesSequence,omitempty"`
+	EditionInfo         string  `json:"editionInfo,omitempty"`
+	Narrator            string  `json:"narrator,omitempty"`
+	Language            string  `json:"language,omitempty"`
+	SuggestedSearchTitle string `json:"suggestedSearchTitle,omitempty"`
+	SuggestedSearchAuthor string `json:"suggestedSearchAuthor,omitempty"`
+	Confidence          float64 `json:"confidence"`
+	Reasoning           string  `json:"reasoning,omitempty"`
+}

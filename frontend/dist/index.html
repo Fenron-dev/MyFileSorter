@@ -15,7 +15,10 @@
           <p class="eyebrow">AUDIOBOOKSHELF PREPARATION</p>
           <h1>MyFileSorter</h1>
         </div>
-        <button class="log-button" id="open-log"><span>≡</span> Sitzungslog</button>
+        <div class="topbar-actions">
+          <button class="log-button" id="open-ai-profiles"><span>✦</span> AI-Profile</button>
+          <button class="log-button" id="open-log"><span>≡</span> Sitzungslog</button>
+        </div>
         <div class="local-badge"><span></span> Lokal zuerst</div>
       </header>
 
@@ -121,6 +124,33 @@
           <div class="log-header-actions"><button class="ghost" id="refresh-log">Aktualisieren</button><button class="panel-close" id="close-log" aria-label="Schließen">×</button></div>
         </header>
         <div id="log-content" class="log-content"></div>
+      </section>
+    </div>
+    <div class="log-overlay hidden" id="ai-profile-overlay" role="dialog" aria-modal="true" aria-labelledby="ai-profile-title">
+      <section class="log-dialog ai-profile-dialog">
+        <header>
+          <div><p class="eyebrow">LOKAL GESPEICHERTE VERBINDUNGEN</p><h2 id="ai-profile-title">AI-Profile</h2></div>
+          <button class="panel-close" id="close-ai-profiles" aria-label="Schließen">×</button>
+        </header>
+        <div class="ai-profile-layout">
+          <aside id="ai-profile-list" class="ai-profile-list"></aside>
+          <form id="ai-profile-form" class="ai-profile-form">
+            <input type="hidden" name="id" />
+            <label><span>Profilname</span><input name="name" required placeholder="Mein lokales Modell" /></label>
+            <label><span>Anbieter</span><select name="provider" id="ai-profile-provider">
+              <option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option>
+              <option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option>
+              <option value="groq">Groq</option><option value="openai_compatible">OpenAI-kompatibel</option>
+            </select></label>
+            <label><span>Endpoint</span><input name="baseUrl" required placeholder="http://127.0.0.1:11434" /></label>
+            <label><span>Modell</span><input name="model" required placeholder="qwen3:8b" /></label>
+            <label><span>API-Schlüssel</span><input name="apiKey" type="password" autocomplete="new-password" placeholder="Leer lassen, um vorhandenen Schlüssel zu behalten" /><small id="ai-key-state">Für lokale Anbieter meist nicht erforderlich.</small></label>
+            <label class="inline-check"><input name="clearApiKey" type="checkbox" /><span>Gespeicherten Schlüssel entfernen</span></label>
+            <label class="inline-check"><input name="isDefault" type="checkbox" /><span>Als Standardprofil verwenden</span></label>
+            <p class="profile-security">Schlüssel werden lokal AES-GCM-verschlüsselt gespeichert und niemals im Sitzungslog angezeigt.</p>
+            <div class="profile-actions"><button type="button" class="ghost danger hidden" id="delete-ai-profile">Löschen</button><span></span><button type="button" class="ghost" id="test-ai-profile">Verbindung testen</button><button class="primary compact" type="submit">Profil speichern</button></div>
+          </form>
+        </div>
       </section>
     </div>
     <div class="toast hidden" id="toast"></div>
