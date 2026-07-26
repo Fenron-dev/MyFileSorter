@@ -86,6 +86,7 @@ Umgesetzt sind Profile für Ollama, LM Studio, OpenAI, OpenRouter, Groq und benu
 - Die Datei wird unabhängig vom Dateisystem zunächst temporär kopiert.
 - Quelle und Kopie werden per SHA-256 verglichen, die Kopie atomar finalisiert und erst danach die Quelle entfernt.
 - Jede Operation wird journalisiert.
+- Die Desktop-Oberfläche erhält nach jeder abgeschlossenen Operation einen Fortschrittsstand mit Datei- und Bytezähler.
 - Undo ist erlaubt, solange das Ziel nicht nachträglich verändert wurde.
 - Konflikte und unsichere Vorschläge blockieren die automatische Ausführung.
 

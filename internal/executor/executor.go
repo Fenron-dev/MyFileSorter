@@ -54,9 +54,20 @@ func New(journalDir string) *Service {
 }
 
 func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domain.ExecutionResult, error) {
+	return s.ExecuteWithProgress(ctx, plan, nil)
+}
+
+func (s *Service) ExecuteWithProgress(ctx context.Context, plan domain.OperationPlan, report func(domain.ExecutionProgress)) (domain.ExecutionResult, error) {
 	if !plan.Executable || len(plan.Operations) == 0 {
 		return domain.ExecutionResult{}, fmt.Errorf("der Operationsplan ist nicht ausführbar")
 	}
+	totalBytes := plan.TotalBytes
+	if totalBytes == 0 {
+		for _, operation := range plan.Operations {
+			totalBytes += operation.Size
+		}
+	}
+	emitProgress(report, domain.ExecutionProgress{Status: "checking", Total: len(plan.Operations), TotalBytes: totalBytes})
 	validatedPlan, preflightWarnings, err := preflightSources(plan)
 	if err != nil {
 		return domain.ExecutionResult{
@@ -64,6 +75,7 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 		}, err
 	}
 	plan = validatedPlan
+	emitProgress(report, domain.ExecutionProgress{Status: "moving", Total: len(plan.Operations), TotalBytes: totalBytes})
 	journal, err := s.newJournal(plan)
 	if err != nil {
 		return domain.ExecutionResult{}, err
@@ -72,8 +84,14 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 		return domain.ExecutionResult{}, fmt.Errorf("Journal anlegen: %w", err)
 	}
 
+	completedBytes := int64(0)
 	for index := range journal.Operations {
 		op := &journal.Operations[index]
+		emitProgress(report, domain.ExecutionProgress{
+			Status: "moving", Completed: index, Total: len(journal.Operations),
+			CompletedBytes: completedBytes, TotalBytes: totalBytes,
+			CurrentSource: op.Source, CurrentTarget: op.Target,
+		})
 		op.Status = "transferring"
 		op.UpdatedAt = s.now()
 		journal.UpdatedAt = s.now()
@@ -97,6 +115,12 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 		op.Status = "completed"
 		op.UpdatedAt = s.now()
 		journal.UpdatedAt = s.now()
+		completedBytes += size
+		emitProgress(report, domain.ExecutionProgress{
+			Status: "moving", Completed: index + 1, Total: len(journal.Operations),
+			CompletedBytes: completedBytes, TotalBytes: totalBytes,
+			CurrentSource: op.Source, CurrentTarget: op.Target,
+		})
 		if err := s.save(journal); err != nil {
 			return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("Journal aktualisieren: %w", err)
 		}
@@ -107,7 +131,17 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 	if err := s.save(journal); err != nil {
 		return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("Journal abschließen: %w", err)
 	}
+	emitProgress(report, domain.ExecutionProgress{
+		Status: "completed", Completed: len(journal.Operations), Total: len(journal.Operations),
+		CompletedBytes: completedBytes, TotalBytes: totalBytes,
+	})
 	return withWarnings(resultFromJournal(journal), preflightWarnings), nil
+}
+
+func emitProgress(report func(domain.ExecutionProgress), progress domain.ExecutionProgress) {
+	if report != nil {
+		report(progress)
+	}
 }
 
 func preflightSources(plan domain.OperationPlan) (domain.OperationPlan, []string, error) {

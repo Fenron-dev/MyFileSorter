@@ -165,6 +165,35 @@ func TestExecuteResolvesEquivalentUnicodeSourcePath(t *testing.T) {
 	}
 }
 
+func TestExecuteReportsCompletedOperationsAndBytes(t *testing.T) {
+	root := t.TempDir()
+	firstSource := filepath.Join(root, "source", "01.mp3")
+	secondSource := filepath.Join(root, "source", "02.mp3")
+	writeTestFile(t, firstSource, "first")
+	writeTestFile(t, secondSource, "second")
+	service := New(filepath.Join(root, "journals"))
+	progress := make([]domain.ExecutionProgress, 0)
+	result, err := service.ExecuteWithProgress(context.Background(), domain.OperationPlan{
+		Executable: true,
+		Operations: []domain.PlannedOperation{
+			{Source: firstSource, Target: filepath.Join(root, "target", "01.mp3"), Size: 5},
+			{Source: secondSource, Target: filepath.Join(root, "target", "02.mp3"), Size: 6},
+		},
+	}, func(update domain.ExecutionProgress) {
+		progress = append(progress, update)
+	})
+	if err != nil || result.Status != "completed" {
+		t.Fatalf("unexpected execution result: %#v, %v", result, err)
+	}
+	last := progress[len(progress)-1]
+	if last.Status != "completed" || last.Completed != 2 || last.Total != 2 || last.CompletedBytes != 11 || last.TotalBytes != 11 {
+		t.Fatalf("unexpected final progress: %#v", last)
+	}
+	if progress[0].Status != "checking" {
+		t.Fatalf("expected source-checking progress first, got %#v", progress[0])
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

@@ -162,6 +162,8 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .execution-status { grid-column: 1 / -1; margin: 0; color: #77827d; font-size: 9px; }
 .execution-status.running { color: #2f6953; font-weight: 700; }
 .execution-status.error { color: #91473f; font-weight: 700; }
+.execution-progress { grid-column: 1 / -1; height: 7px; overflow: hidden; border-radius: 999px; background: #d9e3dd; }
+.execution-progress span { height: 100%; display: block; border-radius: inherit; background: #2d6a59; transition: width .2s ease; }
 .rescan-inline { grid-column: 1 / -1; justify-self: start; }
 .execution-notice { margin-top: 12px; }
 .source-recovery { margin-top: 12px; padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #775423; border: 1px solid #dfc99f; border-radius: 9px; background: #fff7df; font-size: 10px; }

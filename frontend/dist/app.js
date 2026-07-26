@@ -1,4 +1,5 @@
-const state = { proposals: [], selectedId: null, lastPlan: null, lastPlanOptions: null, lastExecution: null, aiProfiles: [], aiSuggestions: {} };
+const state = { proposals: [], selectedId: null, lastPlan: null, lastPlanOptions: null, lastExecution: null, aiProfiles: [], aiSuggestions: {}, executionInProgress: false };
+const preferencesKey = "myfilesorter.preferences.v1";
 
 const $ = (selector) => document.querySelector(selector);
 const api = () => window.go?.main?.App || browserPreviewAPI;
@@ -128,6 +129,18 @@ const browserPreviewAPI = {
     };
   },
   async ExecutePlan() {
+    const operations = state.lastPlan?.operations || [];
+    let completedBytes = 0;
+    handleExecutionProgress({ status: "checking", completed: 0, total: operations.length, completedBytes: 0, totalBytes: state.lastPlan?.totalBytes || 0 });
+    for (let index = 0; index < operations.length; index += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      completedBytes += operations[index].size || 0;
+      handleExecutionProgress({
+        status: "moving", completed: index + 1, total: operations.length,
+        completedBytes, totalBytes: state.lastPlan?.totalBytes || 0,
+        currentSource: operations[index].source, currentTarget: operations[index].target,
+      });
+    }
     return {
       journalId: "browser-preview-journal", status: "completed",
       completed: state.lastPlan?.operations.length || 0,
@@ -221,6 +234,34 @@ function statusLabel(status) {
 function selectedNumberWidth(id, fallback = 2) {
   const value = Number.parseInt($(id)?.value ?? fallback, 10);
   return Number.isFinite(value) ? value : fallback;
+}
+
+function savePreferences() {
+  try {
+    localStorage.setItem(preferencesKey, JSON.stringify({
+      source: $("#source")?.value || "",
+      target: $("#target")?.value || "",
+      ...planOptions(),
+    }));
+  } catch (_error) {
+    // Die App bleibt auch ohne verfügbaren Webview-Speicher vollständig nutzbar.
+  }
+}
+
+function restorePreferences() {
+  try {
+    const preferences = JSON.parse(localStorage.getItem(preferencesKey) || "null");
+    if (!preferences) return;
+    $("#source").value = preferences.source || "";
+    $("#target").value = preferences.target || "";
+    if (Number.isFinite(preferences.bookNumberWidth)) $("#book-number-width").value = String(preferences.bookNumberWidth);
+    if (Number.isFinite(preferences.trackNumberWidth)) $("#track-number-width").value = String(preferences.trackNumberWidth);
+    if (["source_title", "book_title"].includes(preferences.audioFileNaming)) $("#audio-file-naming").value = preferences.audioFileNaming;
+    if (typeof preferences.moveEbooks === "boolean") $("#move-ebooks").checked = preferences.moveEbooks;
+    if (typeof preferences.cleanupSidecars === "boolean") $("#cleanup-sidecars").checked = preferences.cleanupSidecars;
+  } catch (_error) {
+    // Beschädigte oder ältere Einstellungen werden ignoriert.
+  }
 }
 
 function automaticBookWidth(proposal) {
@@ -328,7 +369,10 @@ function logEntry(entry) {
 async function chooseDirectory(input, title) {
   try {
     const path = await api().SelectDirectory(title);
-    if (path) input.value = path;
+    if (path) {
+      input.value = path;
+      savePreferences();
+    }
   } catch (error) {
     toast(String(error), true);
   }
@@ -338,6 +382,7 @@ async function scan() {
   const source = $("#source").value.trim();
   if (!source) return toast("Bitte zuerst einen Quellordner auswählen.", true);
   const button = $("#scan");
+  savePreferences();
   button.disabled = true;
   button.textContent = "Scan läuft …";
   try {
@@ -696,6 +741,7 @@ async function buildPlan() {
   const target = $("#target").value.trim();
   if (!target) return toast("Bitte einen Zielordner auswählen.", true);
   try {
+    savePreferences();
     const options = planOptions();
     const plan = await api().BuildPlan(target, options);
     state.lastPlan = plan;
@@ -714,6 +760,7 @@ async function buildPlan() {
           <label><input type="checkbox" id="execution-consent" /> Ich habe Quelle und Ziel geprüft und möchte die angezeigten Dateien verschieben.</label>
           <button type="button" class="primary compact" id="execute-plan" disabled>Dateien verschieben</button>
           <p class="execution-status" id="execution-status" aria-live="polite">Nach Aktivierung der Checkbox wird das Verschieben freigegeben.</p>
+          <div class="execution-progress hidden" id="execution-progress" role="progressbar" aria-label="Verschiebefortschritt" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="execution-progress-fill"></span></div>
         </div>
         <p class="dry-run-note">Die Vorschau verändert noch nichts. Erst „Dateien verschieben“ startet die journalisierte Übertragung. Die Quelle wird erst nach vollständiger Kopie und erfolgreichem SHA-256-Vergleich entfernt.</p>
       ` : `<p class="dry-run-note">Konflikte müssen vor der Ausführung behoben werden.</p>`}
@@ -759,6 +806,8 @@ async function executePlan() {
   button.textContent = "Dateien werden verschoben …";
   status.textContent = `Übertragung gestartet: 0 von ${count} Operationen abgeschlossen. Bitte die App geöffnet lassen.`;
   status.className = "execution-status running";
+  state.executionInProgress = true;
+  showExecutionProgress(0);
   await new Promise((resolve) => requestAnimationFrame(() => resolve()));
   try {
     const result = await api().ExecutePlan(target, state.lastPlanOptions || planOptions());
@@ -782,7 +831,46 @@ async function executePlan() {
     status.textContent = `Verschieben nicht gestartet oder unterbrochen: ${String(error)}`;
     status.className = "execution-status error";
     if (isSourceError(error)) addRescanButton(status);
+  } finally {
+    state.executionInProgress = false;
   }
+}
+
+function handleExecutionProgress(progress) {
+  if (!state.executionInProgress) return;
+  const completed = Number(progress?.completed) || 0;
+  const total = Number(progress?.total) || state.lastPlan?.operations.length || 0;
+  const completedBytes = Number(progress?.completedBytes) || 0;
+  const totalBytes = Number(progress?.totalBytes) || state.lastPlan?.totalBytes || 0;
+  const fraction = totalBytes > 0 ? completedBytes / totalBytes : total > 0 ? completed / total : 0;
+  const percent = progress?.status === "completed" ? 100 : Math.max(0, Math.min(100, Math.round(fraction * 100)));
+  const status = $("#execution-status");
+  const button = $("#execute-plan");
+  if (!status || !button) return;
+  const currentName = pathBaseName(progress?.currentSource || "");
+  if (progress?.status === "checking") {
+    status.textContent = `Alle ${total} Quelldateien werden vorab geprüft …`;
+  } else {
+    const bytes = totalBytes > 0 ? ` · ${formatBytes(completedBytes)} von ${formatBytes(totalBytes)}` : "";
+    const current = currentName && completed < total ? ` · Aktuell: ${currentName}` : "";
+    status.textContent = `${completed} von ${total} Operationen abgeschlossen${bytes}${current}`;
+  }
+  status.className = "execution-status running";
+  button.textContent = `${percent} % · Dateien werden verschoben …`;
+  showExecutionProgress(percent);
+}
+
+function showExecutionProgress(percent) {
+  const progress = $("#execution-progress");
+  const fill = $("#execution-progress-fill");
+  if (!progress || !fill) return;
+  progress.classList.remove("hidden");
+  progress.setAttribute("aria-valuenow", String(percent));
+  fill.style.width = `${percent}%`;
+}
+
+function pathBaseName(path) {
+  return String(path || "").replaceAll("\\", "/").split("/").filter(Boolean).pop() || "";
 }
 
 function renderExecutionResult(result) {
@@ -945,6 +1033,8 @@ async function deleteAIProfile() {
   }
 }
 
+restorePreferences();
+
 $("#choose-source").addEventListener("click", () => chooseDirectory($("#source"), "Quellordner auswählen"));
 $("#choose-target").addEventListener("click", () => chooseDirectory($("#target"), "Zielordner auswählen"));
 $("#scan").addEventListener("click", scan);
@@ -952,6 +1042,8 @@ $("#build-plan").addEventListener("click", buildPlan);
 $("#open-log").addEventListener("click", showSessionLog);
 $("#open-ai-profiles").addEventListener("click", showAIProfiles);
 $("#close-ai-profiles").addEventListener("click", () => $("#ai-profile-overlay").classList.add("hidden"));
+
+window.runtime?.EventsOn?.("execution:progress", handleExecutionProgress);
 $("#ai-profile-form").addEventListener("submit", saveAIProfile);
 $("#test-ai-profile").addEventListener("click", testAIProfile);
 $("#delete-ai-profile").addEventListener("click", deleteAIProfile);
@@ -960,8 +1052,9 @@ $("#ai-profile-provider").addEventListener("change", (event) => {
 });
 $("#refresh-log").addEventListener("click", showSessionLog);
 $("#close-log").addEventListener("click", () => $("#log-overlay").classList.add("hidden"));
-[$("#book-number-width"), $("#track-number-width"), $("#audio-file-naming")].forEach((input) => {
+[$("#book-number-width"), $("#track-number-width"), $("#audio-file-naming"), $("#move-ebooks"), $("#cleanup-sidecars")].forEach((input) => {
   input.addEventListener("change", () => {
+    savePreferences();
     state.lastPlan = null;
     render();
   });

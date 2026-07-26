@@ -141,6 +141,16 @@ type ExecutionResult struct {
 	Warnings   []string `json:"warnings,omitempty"`
 }
 
+type ExecutionProgress struct {
+	Status         string `json:"status"`
+	Completed      int    `json:"completed"`
+	Total          int    `json:"total"`
+	CompletedBytes int64  `json:"completedBytes"`
+	TotalBytes     int64  `json:"totalBytes"`
+	CurrentSource  string `json:"currentSource,omitempty"`
+	CurrentTarget  string `json:"currentTarget,omitempty"`
+}
+
 type LogEntry struct {
 	Timestamp time.Time         `json:"timestamp"`
 	Level     string            `json:"level"`

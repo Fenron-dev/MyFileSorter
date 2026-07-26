@@ -15,6 +15,7 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - konfliktfreier Dry-Run-Operationsplan
 - ausdrücklich bestätigte, journalisierte Ausführung
 - vollständige Quellenprüfung vor der ersten Dateioperation, inklusive sicherer Auflösung äquivalenter Unicode-Pfadschreibweisen
+- Live-Fortschritt nach Operationen und Datenmenge einschließlich aktuell bearbeiteter Datei
 - SHA-256-Prüfung jeder Kopie, bevor die Quelldatei entfernt wird
 - Undo, solange die importierten Zieldateien unverändert sind
 - optionales Einsortieren von E-Books unter `# Ebooks/Autor/Serie oder Buch`
@@ -23,6 +24,7 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - native Ordnerablage per Drag & Drop als Alternative zur Ordnerauswahl
 - getrennte feste oder automatische Stellenzahl für Band- und Tracknummern
 - wahlweise einheitliche Audiodateinamen oder bereinigte vorhandene Kapitelbezeichnungen
+- lokal gespeicherte Quell-/Zielpfade und Importoptionen für den nächsten App-Start
 - bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
 - auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
 - verwaltbare AI-Profile für Ollama, LM Studio, OpenAI, OpenRouter, Groq und OpenAI-kompatible Endpoints

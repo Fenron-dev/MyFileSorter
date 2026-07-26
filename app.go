@@ -172,7 +172,9 @@ func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.Exe
 			"source": operation.Source, "target": targetPath,
 		})
 	}
-	result, err := a.executor.Execute(a.ctx, plan)
+	result, err := a.executor.ExecuteWithProgress(a.ctx, plan, func(progress domain.ExecutionProgress) {
+		runtime.EventsEmit(a.ctx, "execution:progress", progress)
+	})
 	if result.JournalID != "" {
 		proposalIDs := uniqueProposalIDs(plan.Operations)
 		a.mu.Lock()
