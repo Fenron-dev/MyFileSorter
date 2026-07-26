@@ -27,6 +27,7 @@ func BuildWithOptions(target string, proposals []domain.BookProposal, options do
 	plan := domain.OperationPlan{TargetRoot: targetRoot, CreatedAt: time.Now(), Executable: true}
 	seen := make(map[string]string)
 	cleanupOperations := make([]domain.PlannedOperation, 0)
+	seriesWidths := automaticSeriesWidths(proposals)
 	for _, proposal := range proposals {
 		if proposal.Status != domain.StatusConfirmed {
 			continue
@@ -34,14 +35,30 @@ func BuildWithOptions(target string, proposals []domain.BookProposal, options do
 		if overlaps(targetRoot, proposal.SourceRoot) {
 			return domain.OperationPlan{}, fmt.Errorf("source and target must not overlap")
 		}
-		bookDir, dirErr := naming.BookDirectory(proposal.Metadata)
+		bookWidth := options.BookNumberWidth
+		if bookWidth == 0 {
+			bookWidth = 2
+		} else if bookWidth < 0 {
+			bookWidth = seriesWidths[seriesKey(proposal)]
+		}
+		bookDir, dirErr := naming.BookDirectoryWithWidth(proposal.Metadata, bookWidth)
 		if dirErr != nil {
 			plan.Executable = false
 			plan.Warnings = append(plan.Warnings, proposal.Metadata.Title+": "+dirErr.Error())
 			continue
 		}
+		trackWidth := options.TrackNumberWidth
+		if trackWidth == 0 {
+			trackWidth = 2
+		} else if trackWidth < 0 {
+			trackWidth = automaticTrackWidth(proposal.Files)
+		}
 		for index, file := range proposal.Files {
-			targetPath := filepath.Join(targetRoot, bookDir, naming.TrackName(index+1, len(proposal.Files), proposal.Metadata.Title, file.Extension))
+			fileName := naming.TrackNameWithWidth(index+1, len(proposal.Files), proposal.Metadata.Title, file.Extension, trackWidth)
+			if options.AudioFileNaming == "source_title" {
+				fileName = naming.SourceTrackName(file, index+1, len(proposal.Files), trackWidth)
+			}
+			targetPath := filepath.Join(targetRoot, bookDir, fileName)
 			appendMove(&plan, seen, proposal.ID, "audio", file.Path, targetPath, file.Size)
 		}
 		if options.MoveEbooks {
@@ -68,6 +85,42 @@ func BuildWithOptions(target string, proposals []domain.BookProposal, options do
 		plan.Warnings = append(plan.Warnings, "Keine bestätigten, konfliktfreien Hörbücher im Plan.")
 	}
 	return plan, nil
+}
+
+func automaticTrackWidth(files []domain.AudioFile) int {
+	maximum := len(files)
+	for _, file := range files {
+		if file.Track > maximum {
+			maximum = file.Track
+		}
+	}
+	if maximum < 1 {
+		return 1
+	}
+	return len(fmt.Sprintf("%d", maximum))
+}
+
+func automaticSeriesWidths(proposals []domain.BookProposal) map[string]int {
+	maximum := make(map[string]int)
+	for _, proposal := range proposals {
+		if strings.TrimSpace(proposal.Metadata.Series) == "" {
+			continue
+		}
+		value := strings.SplitN(strings.ReplaceAll(proposal.Metadata.SeriesSequence, ",", "."), ".", 2)[0]
+		var number int
+		if _, err := fmt.Sscanf(value, "%d", &number); err == nil && number > maximum[seriesKey(proposal)] {
+			maximum[seriesKey(proposal)] = number
+		}
+	}
+	widths := make(map[string]int, len(maximum))
+	for key, number := range maximum {
+		widths[key] = len(fmt.Sprintf("%d", number))
+	}
+	return widths
+}
+
+func seriesKey(proposal domain.BookProposal) string {
+	return strings.ToLower(strings.TrimSpace(proposal.Metadata.Author) + "\x00" + strings.TrimSpace(proposal.Metadata.Series))
 }
 
 func appendMove(plan *domain.OperationPlan, seen map[string]string, proposalID, category, source, target string, size int64) {

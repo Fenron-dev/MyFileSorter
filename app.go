@@ -133,12 +133,17 @@ func (a *App) BuildPlan(target string, options domain.PlanOptions) (domain.Opera
 	}
 	a.logger.Info("plan", "Operationsplan erstellt", map[string]string{
 		"target": plan.TargetRoot, "operations": strconv.Itoa(len(plan.Operations)), "executable": strconv.FormatBool(plan.Executable),
+		"bookNumberWidth": strconv.Itoa(options.BookNumberWidth), "trackNumberWidth": strconv.Itoa(options.TrackNumberWidth),
+		"audioFileNaming": options.AudioFileNaming,
 	})
 	return plan, nil
 }
 
 func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.ExecutionResult, error) {
-	a.logger.Info("import", "Import gestartet", map[string]string{"target": target})
+	a.logger.Info("import", "Import gestartet", map[string]string{
+		"target": target, "bookNumberWidth": strconv.Itoa(options.BookNumberWidth),
+		"trackNumberWidth": strconv.Itoa(options.TrackNumberWidth), "audioFileNaming": options.AudioFileNaming,
+	})
 	a.mu.RLock()
 	proposals := cloneProposals(a.proposals)
 	a.mu.RUnlock()

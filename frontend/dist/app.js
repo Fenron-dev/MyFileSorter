@@ -105,12 +105,12 @@ const browserPreviewAPI = {
       proposalId: proposal.id,
       action: "move", category: "audio",
       source: file.path,
-      target: `${target}/${proposal.metadata.author}/${proposal.metadata.series}/${String(proposal.metadata.seriesSequence).padStart(2, "0")} - ${proposal.metadata.title}/${String(index + 1).padStart(2, "0")} - ${proposal.metadata.title}${file.extension}`,
+      target: `${target}/${proposal.metadata.author}/${proposal.metadata.series}/${formattedSequence(proposal.metadata.seriesSequence, proposal, options.bookNumberWidth)} - ${proposal.metadata.title}/${targetAudioName(file, index, proposal, options)}`,
       size: file.size,
     })));
     const ebooks = options.moveEbooks ? confirmed.flatMap((proposal) => (proposal.companions || []).filter((file) => file.kind === "ebook").map((file) => ({
       proposalId: proposal.id, action: "move", category: "ebook", source: file.path,
-      target: `${target}/# Ebooks/${proposal.metadata.author}/${proposal.metadata.series}/${String(proposal.metadata.seriesSequence).padStart(2, "0")} - ${proposal.metadata.title}/${proposal.metadata.title}${file.extension}`,
+      target: `${target}/# Ebooks/${proposal.metadata.author}/${proposal.metadata.series}/${formattedSequence(proposal.metadata.seriesSequence, proposal, options.bookNumberWidth)} - ${proposal.metadata.title}/${proposal.metadata.title}${file.extension}`,
       size: file.size,
     }))) : [];
     const cleanup = options.cleanupSidecars ? confirmed.flatMap((proposal) => (proposal.companions || []).filter((file) => file.kind === "discard").map((file) => ({
@@ -180,19 +180,57 @@ function statusLabel(status) {
   }[status] || status;
 }
 
-function formattedSequence(value) {
+function selectedNumberWidth(id, fallback = 2) {
+  const value = Number.parseInt($(id)?.value ?? fallback, 10);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function automaticBookWidth(proposal) {
+  const values = state.proposals
+    .filter((item) => item.metadata.author.trim().toLocaleLowerCase() === proposal.metadata.author.trim().toLocaleLowerCase()
+      && item.metadata.series.trim().toLocaleLowerCase() === proposal.metadata.series.trim().toLocaleLowerCase())
+    .map((item) => Number.parseInt(String(item.metadata.seriesSequence).replace(",", ".").split(".")[0], 10))
+    .filter(Number.isFinite);
+  return String(Math.max(1, ...values)).length;
+}
+
+function automaticTrackWidth(files) {
+  const maximum = Math.max(files.length, ...(files.map((file) => Number(file.track) || 0)), 1);
+  return String(maximum).length;
+}
+
+function formattedSequence(value, proposal, requestedWidth = selectedNumberWidth("#book-number-width")) {
   const text = String(value || "").trim().replace(",", ".");
   if (!text) return "";
   const [whole, fraction] = text.split(".", 2);
   const numeric = Number.parseInt(whole, 10);
   if (!Number.isFinite(numeric)) return text;
   const cleanedFraction = fraction?.replace(/0+$/, "") || "";
-  return `${String(numeric).padStart(2, "0")}${cleanedFraction ? `.${cleanedFraction}` : ""}`;
+  const width = requestedWidth < 0 && proposal ? automaticBookWidth(proposal) : Math.max(1, requestedWidth || 2);
+  return `${String(numeric).padStart(width, "0")}${cleanedFraction ? `.${cleanedFraction}` : ""}`;
 }
 
 function displayBookTitle(proposal) {
-  const sequence = formattedSequence(proposal.metadata.seriesSequence);
+  const sequence = formattedSequence(proposal.metadata.seriesSequence, proposal);
   return sequence ? `${sequence} - ${proposal.metadata.title}` : proposal.metadata.title;
+}
+
+function targetAudioName(file, index, proposal, options = planOptions()) {
+  const requested = Number(options.trackNumberWidth ?? 2);
+  const width = requested < 0 ? automaticTrackWidth(proposal.files) : Math.max(1, requested || 2);
+  let number = Number(file.track) || index + 1;
+  let title = proposal.metadata.title;
+  if (options.audioFileNaming === "source_title") {
+    const extensionPattern = new RegExp(`${String(file.extension || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+    let sourceTitle = String(file.name || "").replace(extensionPattern, "");
+    const match = sourceTitle.match(/^\s*(\d+)\s*(?:[-._]+\s*)?(.*)$/);
+    if (match) {
+      number = Number(file.track) || Number.parseInt(match[1], 10) || index + 1;
+      sourceTitle = match[2];
+    }
+    title = sourceTitle.replaceAll("_", " ").replaceAll(".", " ").replace(/\s+/g, " ").replace(/^[- ]+|[- ]+$/g, "") || "Track";
+  }
+  return `${String(number).padStart(Math.max(width, String(number).length), "0")} - ${title}${String(file.extension || "").toLocaleLowerCase()}`;
 }
 
 function displaySourcePath(proposal) {
@@ -378,7 +416,7 @@ function renderDetail() {
     </form>
     <div class="file-box">
       <p>QUELLDATEIEN</p>
-      ${proposal.files.map((file, index) => `<div><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(file.name)}</strong><small>${formatBytes(file.size)}</small></div>`).join("")}
+      ${proposal.files.map((file, index) => `<div class="file-preview"><span>${String(index + 1).padStart(2, "0")}</span><span class="file-name-pair"><strong title="${escapeHTML(file.path)}">${escapeHTML(file.name)}</strong><em>→ ${escapeHTML(targetAudioName(file, index, proposal))}</em></span><small>${formatBytes(file.size)}</small></div>`).join("")}
     </div>
     ${renderCompanions(proposal.companions || [])}
     <div class="online-panel hidden" id="online-panel"></div>
@@ -585,6 +623,9 @@ function planOptions() {
   return {
     moveEbooks: $("#move-ebooks").checked,
     cleanupSidecars: $("#cleanup-sidecars").checked,
+    bookNumberWidth: selectedNumberWidth("#book-number-width"),
+    trackNumberWidth: selectedNumberWidth("#track-number-width"),
+    audioFileNaming: $("#audio-file-naming")?.value || "source_title",
   };
 }
 
@@ -674,6 +715,42 @@ $("#build-plan").addEventListener("click", buildPlan);
 $("#open-log").addEventListener("click", showSessionLog);
 $("#refresh-log").addEventListener("click", showSessionLog);
 $("#close-log").addEventListener("click", () => $("#log-overlay").classList.add("hidden"));
+[$("#book-number-width"), $("#track-number-width"), $("#audio-file-naming")].forEach((input) => {
+  input.addEventListener("change", () => {
+    state.lastPlan = null;
+    render();
+  });
+});
+
+async function handleDroppedPaths(paths) {
+  const usable = (paths || []).filter(Boolean);
+  if (!usable.length) return;
+  if (usable.length > 1) toast("Mehrere Ablagen erkannt; der erste Ordner wird verwendet.");
+  $("#source").value = usable[0];
+  await scan();
+}
+
+function setupFileDrop() {
+  const zone = $("#source-drop-zone");
+  if (window.runtime?.OnFileDrop) {
+    window.runtime.OnFileDrop((_x, _y, paths) => handleDroppedPaths(paths), true);
+  }
+  zone.addEventListener("dragover", (event) => {
+    event.preventDefault();
+    zone.classList.add("drag-active");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("drag-active"));
+  zone.addEventListener("drop", (event) => {
+    event.preventDefault();
+    zone.classList.remove("drag-active");
+    if (window.runtime?.OnFileDrop) return;
+    const paths = [...(event.dataTransfer?.files || [])].map((file) => file.path).filter(Boolean);
+    if (paths.length) handleDroppedPaths(paths);
+    else toast("Die Browser-Vorschau kann keine lokalen Ordnerpfade lesen. Drag & Drop funktioniert in der Desktop-App.");
+  });
+}
+
+setupFileDrop();
 $("#log-overlay").addEventListener("click", (event) => {
   if (event.target === $("#log-overlay")) $("#log-overlay").classList.add("hidden");
 });

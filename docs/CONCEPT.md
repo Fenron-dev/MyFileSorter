@@ -57,7 +57,8 @@ Serie:      Autor/Serie/NN - Titel/TT - Titel.ext
 Einzelbuch: Autor/Titel/TT - Titel.ext
 ```
 
-- Serien- und Tracknummern sind mindestens zweistellig.
+- Serien- und Tracknummern sind unabhängig konfigurierbar: ohne Auffüllung, mit fester Stellenzahl oder automatisch anhand der höchsten erkannten Nummer. Der Dry Run zeigt die resultierenden Namen vor dem Import.
+- Audiodateien können einheitlich nach dem Buchtitel benannt werden. Alternativ bleibt der vorhandene Kapitelname erhalten; nur Zahlenpräfix sowie Punkt- und Unterstrich-Trennungen werden portabel normalisiert.
 - Dezimale Seriennummern bleiben erhalten.
 - Namen werden für Windows, macOS und Linux normalisiert.
 - Bestehende Zieldateien werden niemals überschrieben.

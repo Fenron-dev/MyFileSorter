@@ -1,6 +1,7 @@
 package planner
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -70,5 +71,48 @@ func TestBuildPlansEbooksAndOptionalSidecarCleanup(t *testing.T) {
 	}
 	if plan.Operations[2].Action != "remove" || plan.Operations[2].Target != "" {
 		t.Fatalf("unexpected cleanup operation: %#v", plan.Operations[2])
+	}
+}
+
+func TestBuildUsesSelectedNumberWidthsAndSourceTrackTitles(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	target := filepath.Join(root, "target")
+	proposal := domain.BookProposal{
+		ID: "book", SourceRoot: source, Status: domain.StatusConfirmed,
+		Metadata: domain.BookMetadata{Author: "Autor", Series: "Serie", SeriesSequence: "1", Title: "Titel"},
+		Files: []domain.AudioFile{
+			{Path: filepath.Join(source, "1.Opening_Credits.mp3"), Name: "1.Opening_Credits.mp3", Extension: ".mp3", Track: 1},
+			{Path: filepath.Join(source, "2.Kapitel_1.mp3"), Name: "2.Kapitel_1.mp3", Extension: ".mp3", Track: 2},
+		},
+	}
+	plan, err := BuildWithOptions(target, []domain.BookProposal{proposal}, domain.PlanOptions{
+		BookNumberWidth: 3, TrackNumberWidth: 3, AudioFileNaming: "source_title",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Operations[0].Target; !strings.Contains(got, filepath.Join("Serie", "001 - Titel", "001 - Opening Credits.mp3")) {
+		t.Fatalf("unexpected target: %q", got)
+	}
+}
+
+func TestBuildAutomaticWidthsFollowDetectedMaximum(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	target := filepath.Join(root, "target")
+	proposals := []domain.BookProposal{
+		{ID: "one", SourceRoot: source, Status: domain.StatusConfirmed, Metadata: domain.BookMetadata{Author: "Autor", Series: "Serie", SeriesSequence: "1", Title: "Eins"}, Files: make([]domain.AudioFile, 10)},
+		{ID: "hundred", SourceRoot: source, Status: domain.StatusReviewRequired, Metadata: domain.BookMetadata{Author: "Autor", Series: "Serie", SeriesSequence: "100", Title: "Hundert"}},
+	}
+	for index := range proposals[0].Files {
+		proposals[0].Files[index] = domain.AudioFile{Path: filepath.Join(source, fmt.Sprintf("%d.mp3", index+1)), Name: fmt.Sprintf("%d.mp3", index+1), Extension: ".mp3"}
+	}
+	plan, err := BuildWithOptions(target, proposals, domain.PlanOptions{BookNumberWidth: -1, TrackNumberWidth: -1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plan.Operations[0].Target; !strings.Contains(got, filepath.Join("Serie", "001 - Eins", "01 - Eins.mp3")) {
+		t.Fatalf("unexpected automatic target: %q", got)
 	}
 }

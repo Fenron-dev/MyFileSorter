@@ -26,13 +26,14 @@
             <h2>Unsortierte Hörbücher<br />sicher vorbereiten.</h2>
             <p class="hero-copy">Der erste Scan bleibt vollständig auf diesem Gerät. Du entscheidest über jeden Vorschlag, bevor ein Zielplan entsteht.</p>
           </div>
-          <div class="source-panel">
+          <div class="source-panel" id="source-drop-zone">
             <label for="source">Quellordner</label>
             <div class="path-row">
               <input id="source" placeholder="Ordner mit unsortierten Hörbüchern" />
               <button class="icon-button" id="choose-source" title="Quellordner auswählen">…</button>
             </div>
             <button class="primary" id="scan">Lokal scannen <span>→</span></button>
+            <div class="drop-hint"><strong>Oder Ordner hier ablegen</strong><span>Audiodateien werden anschließend lokal eingelesen</span></div>
             <p class="privacy-note">Keine Online- oder AI-Anfrage beim Scan.</p>
           </div>
         </section>
@@ -69,6 +70,37 @@
             <button class="secondary" id="build-plan">Operationsplan anzeigen</button>
           </div>
           <div class="plan-options">
+            <label>
+              <span><strong>Bandnummern</strong><small>Breite der Nummer vor dem Buchordner</small></span>
+              <select id="book-number-width">
+                <option value="-1">Automatisch nach höchstem Band</option>
+                <option value="1">Keine Auffüllung: 1</option>
+                <option value="2" selected>2-stellig: 01</option>
+                <option value="3">3-stellig: 001</option>
+                <option value="4">4-stellig: 0001</option>
+                <option value="5">5-stellig: 00001</option>
+                <option value="6">6-stellig: 000001</option>
+              </select>
+            </label>
+            <label>
+              <span><strong>Tracknummern</strong><small>Automatisch richtet sich nach der höchsten Tracknummer</small></span>
+              <select id="track-number-width">
+                <option value="-1">Automatisch nach Dateianzahl</option>
+                <option value="1">Keine Auffüllung: 1</option>
+                <option value="2" selected>2-stellig: 01</option>
+                <option value="3">3-stellig: 001</option>
+                <option value="4">4-stellig: 0001</option>
+                <option value="5">5-stellig: 00001</option>
+                <option value="6">6-stellig: 000001</option>
+              </select>
+            </label>
+            <label>
+              <span><strong>Audiodateinamen</strong><small>Vorhandene Kapitelbezeichnungen behalten oder durch den Buchtitel ersetzen</small></span>
+              <select id="audio-file-naming">
+                <option value="source_title" selected>Vorhandenen Namen bereinigen</option>
+                <option value="book_title">Einheitlich nach Buchtitel</option>
+              </select>
+            </label>
             <label>
               <input type="checkbox" id="move-ebooks" checked />
               <span><strong>E-Books einsortieren</strong><small>EPUB, PDF, MOBI und ähnliche Dateien nach „# Ebooks“ verschieben</small></span>

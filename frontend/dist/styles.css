@@ -27,9 +27,13 @@ main { padding-bottom: 80px; }
 .hero h2 { font-size: clamp(42px, 4.3vw, 66px); line-height: 1.03; }
 .hero-copy { max-width: 570px; color: #66706b; line-height: 1.65; font-size: 16px; }
 .source-panel { padding: 28px; border: 1px solid #d2ccc0; border-radius: 20px; background: rgba(255,255,255,.55); box-shadow: 0 18px 60px rgba(45, 55, 48, .08); }
+.source-panel { --wails-drop-target: drop; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.source-panel.wails-drop-target-active, .source-panel.drag-active { border-color: #4f806d; background: #edf6f0; transform: translateY(-2px); }
+.drop-hint { margin-top: 14px; padding: 13px; display: flex; flex-direction: column; gap: 3px; text-align: center; color: #64716c; border: 1px dashed #bfc8c2; border-radius: 10px; font-size: 10px; }
+.drop-hint strong { color: #385d50; font-size: 11px; }
 .source-panel label { display: block; margin-bottom: 10px; font-size: 12px; font-weight: 800; }
 .path-row { display: flex; gap: 8px; }
-input { width: 100%; min-width: 0; padding: 12px 13px; color: #26332f; border: 1px solid #cbc5b9; border-radius: 9px; outline: none; background: #fffdfa; }
+input, select { width: 100%; min-width: 0; padding: 12px 13px; color: #26332f; border: 1px solid #cbc5b9; border-radius: 9px; outline: none; background: #fffdfa; }
 input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12); }
 .icon-button { width: 46px; border: 1px solid #cbc5b9; border-radius: 9px; background: #fffdfa; font-weight: 800; }
 .primary, .secondary, .ghost { border-radius: 9px; padding: 12px 17px; font-size: 13px; font-weight: 800; border: 0; }
@@ -83,6 +87,10 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .file-box { padding: 15px; border-radius: 10px; background: #efede7; }
 .file-box > p { margin: 0 0 8px; color: #867f74; font-size: 9px; font-weight: 900; letter-spacing: .1em; }
 .file-box div { padding: 7px 0; display: grid; grid-template-columns: 28px 1fr auto; gap: 8px; border-top: 1px solid #ddd9d0; font-size: 11px; }
+.file-box .file-preview { grid-template-columns: 28px minmax(0, 1fr) auto; }
+.file-name-pair { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.file-name-pair strong, .file-name-pair em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-name-pair em { color: #587268; font-size: 9px; font-style: normal; font-weight: 600; }
 .file-box div span, .file-box div small { color: #8b877f; }
 .companion-box { margin-top: 10px; padding: 15px; border: 1px solid #ded8ce; border-radius: 10px; background: #f8f6f0; }
 .companion-box > p { margin: 0 0 8px; color: #867f74; font-size: 9px; font-weight: 900; letter-spacing: .1em; }
@@ -124,6 +132,8 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .plan-controls { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 .plan-options { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .plan-options label { padding: 12px 14px; display: flex; align-items: center; gap: 10px; border: 1px solid #d8d2c8; border-radius: 9px; background: #f8f6f0; }
+.plan-options label > span { flex: 1; }
+.plan-options select { width: min(310px, 48%); padding: 9px 10px; }
 .plan-options input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: #204e43; }
 .plan-options span strong, .plan-options span small { display: block; }
 .plan-options span strong { margin-bottom: 3px; font-size: 11px; }

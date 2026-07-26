@@ -115,6 +115,11 @@ type PlannedOperation struct {
 type PlanOptions struct {
 	MoveEbooks      bool `json:"moveEbooks"`
 	CleanupSidecars bool `json:"cleanupSidecars"`
+	// Number widths use -1 for automatic detection, 1 for no padding and
+	// values >= 2 for a fixed minimum width. Zero keeps the legacy default.
+	BookNumberWidth  int    `json:"bookNumberWidth"`
+	TrackNumberWidth int    `json:"trackNumberWidth"`
+	AudioFileNaming  string `json:"audioFileNaming"`
 }
 
 type OperationPlan struct {

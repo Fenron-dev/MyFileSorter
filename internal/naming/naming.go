@@ -22,6 +22,10 @@ var (
 )
 
 func BookDirectory(meta domain.BookMetadata) (string, error) {
+	return BookDirectoryWithWidth(meta, 2)
+}
+
+func BookDirectoryWithWidth(meta domain.BookMetadata, width int) (string, error) {
 	author := Segment(meta.Author)
 	title := Segment(meta.Title)
 	if author == "" || title == "" {
@@ -34,7 +38,7 @@ func BookDirectory(meta domain.BookMetadata) (string, error) {
 		return "", fmt.Errorf("series sequence is required when a series is set")
 	}
 	series := Segment(meta.Series)
-	sequence := Sequence(meta.SeriesSequence)
+	sequence := SequenceWithWidth(meta.SeriesSequence, width)
 	if sequence == "" {
 		return "", fmt.Errorf("series sequence is invalid")
 	}
@@ -42,15 +46,59 @@ func BookDirectory(meta domain.BookMetadata) (string, error) {
 }
 
 func TrackName(index, total int, title, extension string) string {
-	width := 2
-	if digits := len(strconv.Itoa(total)); digits > width {
-		width = digits
-	}
+	return TrackNameWithWidth(index, total, title, extension, 0)
+}
+
+func TrackNameWithWidth(index, total int, title, extension string, width int) string {
+	width = resolvedTrackWidth(width, total, index)
 	extension = strings.ToLower(extension)
 	if extension != "" && !strings.HasPrefix(extension, ".") {
 		extension = "." + extension
 	}
 	return fmt.Sprintf("%0*d - %s%s", width, index, Segment(title), extension)
+}
+
+// SourceTrackName keeps the meaningful part of an existing file name while
+// normalising its numeric prefix and dot/underscore separators.
+func SourceTrackName(file domain.AudioFile, fallbackIndex, total, width int) string {
+	extension := strings.ToLower(file.Extension)
+	if extension == "" {
+		extension = strings.ToLower(filepath.Ext(file.Name))
+	}
+	base := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
+	track := file.Track
+	prefix := regexp.MustCompile(`^\s*(\d+)\s*(?:[-._]+\s*)?(.*)$`)
+	if match := prefix.FindStringSubmatch(base); len(match) == 3 {
+		if parsed, err := strconv.Atoi(match[1]); err == nil && track <= 0 {
+			track = parsed
+		}
+		base = match[2]
+	}
+	if track <= 0 {
+		track = fallbackIndex
+	}
+	base = strings.NewReplacer("_", " ", ".", " ").Replace(base)
+	base = spaces.ReplaceAllString(strings.TrimSpace(base), " ")
+	base = strings.Trim(base, "- ")
+	if base == "" {
+		base = "Track"
+	}
+	return TrackNameWithWidth(track, total, base, extension, width)
+}
+
+func resolvedTrackWidth(width, total, index int) int {
+	if width == 0 {
+		width = 2
+	} else if width < 0 {
+		width = len(strconv.Itoa(max(total, index)))
+	}
+	if width < 1 {
+		return 1
+	}
+	if digits := len(strconv.Itoa(index)); digits > width {
+		return digits
+	}
+	return width
 }
 
 func EbookName(index, total int, title, extension string) string {
@@ -85,13 +133,20 @@ func Segment(value string) string {
 }
 
 func Sequence(value string) string {
+	return SequenceWithWidth(value, 2)
+}
+
+func SequenceWithWidth(value string, width int) string {
 	value = strings.ReplaceAll(strings.TrimSpace(value), ",", ".")
 	parts := strings.SplitN(value, ".", 2)
 	whole, err := strconv.Atoi(parts[0])
 	if err != nil || whole < 0 {
 		return ""
 	}
-	result := fmt.Sprintf("%02d", whole)
+	if width < 1 {
+		width = 1
+	}
+	result := fmt.Sprintf("%0*d", width, whole)
 	if len(parts) == 2 {
 		fraction := strings.TrimRight(parts[1], "0")
 		if fraction != "" {

@@ -19,6 +19,9 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - optionales Einsortieren von E-Books unter `# Ebooks/Autor/Serie oder Buch`
 - optionale, Undo-fähige Bereinigung von Cover-, NFO-, M3U- und CUE-Dateien
 - persistentes JSONL-Sitzungslog mit einer direkt in der App erreichbaren Logansicht
+- native Ordnerablage per Drag & Drop als Alternative zur Ordnerauswahl
+- getrennte feste oder automatische Stellenzahl für Band- und Tracknummern
+- wahlweise einheitliche Audiodateinamen oder bereinigte vorhandene Kapitelbezeichnungen
 - bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
 - auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten

@@ -46,3 +46,18 @@ func TestSequence(t *testing.T) {
 		}
 	}
 }
+
+func TestSequenceWithSelectableWidth(t *testing.T) {
+	for width, want := range map[int]string{1: "1", 2: "01", 3: "001", 4: "0001"} {
+		if got := SequenceWithWidth("1", width); got != want {
+			t.Errorf("SequenceWithWidth(1, %d) = %q, want %q", width, got, want)
+		}
+	}
+}
+
+func TestSourceTrackNameKeepsTitleAndNormalisesSeparators(t *testing.T) {
+	file := domain.AudioFile{Name: "1.Opening_Credits.mp3", Extension: ".mp3", Track: 1}
+	if got := SourceTrackName(file, 1, 12, -1); got != "01 - Opening Credits.mp3" {
+		t.Fatalf("SourceTrackName() = %q", got)
+	}
+}
