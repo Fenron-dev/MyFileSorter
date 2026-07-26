@@ -14,6 +14,7 @@ import (
 )
 
 var sequenceNumber = regexp.MustCompile(`\.\d+|\d+(?:\.\d+)?`)
+var localizedEditionSuffix = regexp.MustCompile(`(?i)\s*[\[(](?:german|english|french|italian|spanish|japanese) edition[\])]\s*$`)
 
 type Audible struct {
 	client       *http.Client
@@ -56,6 +57,9 @@ func (p *Audible) Search(ctx context.Context, query domain.MetadataSearchQuery) 
 		if err != nil {
 			return nil, err
 		}
+		if product, catalogErr := p.fetchCatalogProduct(ctx, host, asin); catalogErr == nil {
+			applyCatalogSeries(&candidate, product)
+		}
 		candidate.Confidence = score(query, candidate)
 		return []domain.MetadataCandidate{candidate}, nil
 	}
@@ -66,6 +70,7 @@ func (p *Audible) Search(ctx context.Context, query domain.MetadataSearchQuery) 
 	params := url.Values{
 		"num_results":      {"8"},
 		"products_sort_by": {"Relevance"},
+		"response_groups":  {"series"},
 		"title":            {query.Title},
 	}
 	if query.Author != "" {
@@ -90,10 +95,13 @@ func (p *Audible) Search(ctx context.Context, query domain.MetadataSearchQuery) 
 			continue
 		}
 		wait.Add(1)
-		go func(index int, asin string) {
+		go func(index int, asin string, product audibleCatalogProduct) {
 			defer wait.Done()
 			results[index], errorsByIndex[index] = p.fetchDetail(ctx, asin, region)
-		}(index, asin)
+			if errorsByIndex[index] == nil {
+				applyCatalogSeries(&results[index], product)
+			}
+		}(index, asin, product)
 	}
 	wait.Wait()
 
@@ -122,9 +130,19 @@ func (p *Audible) fetchDetail(ctx context.Context, asin, region string) (domain.
 }
 
 type audibleCatalogResponse struct {
-	Products []struct {
-		ASIN string `json:"asin"`
-	} `json:"products"`
+	Products []audibleCatalogProduct `json:"products"`
+}
+
+type audibleCatalogProductResponse struct {
+	Product audibleCatalogProduct `json:"product"`
+}
+
+type audibleCatalogProduct struct {
+	ASIN   string `json:"asin"`
+	Series []struct {
+		Title    string `json:"title"`
+		Sequence string `json:"sequence"`
+	} `json:"series"`
 }
 
 type audibleBook struct {
@@ -176,10 +194,36 @@ func audibleCandidate(item audibleBook) domain.MetadataCandidate {
 		DurationMinutes: item.RuntimeLengthMin,
 	}
 	if item.SeriesPrimary != nil {
-		candidate.Series = item.SeriesPrimary.Name
+		candidate.Series = cleanSeriesName(item.SeriesPrimary.Name)
 		candidate.SeriesSequence = cleanSequence(item.SeriesPrimary.Position)
 	}
 	return candidate
+}
+
+func (p *Audible) fetchCatalogProduct(ctx context.Context, host, asin string) (audibleCatalogProduct, error) {
+	var response audibleCatalogProductResponse
+	endpoint := host + "/1.0/catalog/products/" + url.PathEscape(strings.ToUpper(asin)) + "?response_groups=series"
+	if err := getJSON(ctx, p.client, endpoint, &response); err != nil {
+		return audibleCatalogProduct{}, err
+	}
+	return response.Product, nil
+}
+
+func applyCatalogSeries(candidate *domain.MetadataCandidate, product audibleCatalogProduct) {
+	if len(product.Series) == 0 {
+		return
+	}
+	primary := product.Series[0]
+	if strings.TrimSpace(candidate.Series) == "" {
+		candidate.Series = cleanSeriesName(primary.Title)
+	}
+	if strings.TrimSpace(candidate.SeriesSequence) == "" {
+		candidate.SeriesSequence = cleanSequence(primary.Sequence)
+	}
+}
+
+func cleanSeriesName(value string) string {
+	return strings.TrimSpace(localizedEditionSuffix.ReplaceAllString(value, ""))
 }
 
 func validASIN(value string) bool {

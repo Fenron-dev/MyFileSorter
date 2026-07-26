@@ -73,7 +73,7 @@ Einzelbuch: Autor/Titel/TT - Titel.ext
 
 Der Nutzer startet die Suche explizit. Audible ist für konkrete Hörbuchausgaben die Primärquelle; Google Books ergänzt Buchdaten. Treffer werden als Alternativen angezeigt und nie automatisch übernommen.
 
-Umgesetzt sind Audible Deutschland und Google Books. Audible verwendet denselben gekapselten Katalog-/Detailansatz wie Audiobookshelf: regionale Audible-Suche und Detailauflösung über Audnexus. Anbieter, Region und Treffer bleiben vom restlichen Kern entkoppelt. Netzwerkaufrufe haben feste Zeit- und Größenlimits.
+Umgesetzt sind Audible Deutschland und Google Books. Audible verwendet denselben gekapselten Katalog-/Detailansatz wie Audiobookshelf: regionale Audible-Suche und Detailauflösung über Audnexus. Serienname und Bandnummer werden aus den Audnexus-Details übernommen und bei unvollständigen Detaildaten durch die strukturierte `series`-Angabe des Audible-Katalogs ergänzt. Anbieter, Region und Treffer bleiben vom restlichen Kern entkoppelt. Netzwerkaufrufe haben feste Zeit- und Größenlimits.
 
 ### Mit AI analysieren
 

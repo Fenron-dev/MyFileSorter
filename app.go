@@ -295,6 +295,7 @@ func (a *App) ApplyOnlineCandidate(proposalID, candidateID string) (domain.BookP
 	proposal.Confidence = candidate.Confidence
 	a.logger.Info("online", "Online-Treffer übernommen", map[string]string{
 		"proposalId": proposalID, "candidateId": candidateID, "provider": candidate.Provider, "title": candidate.Title,
+		"series": candidate.Series, "seriesSequence": candidate.SeriesSequence,
 	})
 	return cloneProposal(*proposal), nil
 }
