@@ -11,12 +11,14 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - Banddarstellung als `01 - Titel` und separates Info-Feld für Hinweise wie `Ungekürzt`
 - sichtbarer aktueller Quellpfad pro Vorschlag
 - explizite Nutzerbestätigung pro Hörbuch
+- Checkbox-Auswahl: Nur als fertig markierte Hörbücher gelangen in den Importplan
 - konfliktfreier Dry-Run-Operationsplan
 - ausdrücklich bestätigte, journalisierte Ausführung
 - SHA-256-Prüfung jeder Kopie, bevor die Quelldatei entfernt wird
 - Undo, solange die importierten Zieldateien unverändert sind
 - optionales Einsortieren von E-Books unter `# Ebooks/Autor/Serie oder Buch`
 - optionale, Undo-fähige Bereinigung von Cover-, NFO-, M3U- und CUE-Dateien
+- persistentes JSONL-Sitzungslog mit einer direkt in der App erreichbaren Logansicht
 - bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
 - auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten

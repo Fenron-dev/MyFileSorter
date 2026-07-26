@@ -141,6 +141,16 @@ const browserPreviewAPI = {
       warnings: ["Browser-Vorschau: Es wurden keine Dateien verändert."],
     };
   },
+  async GetSessionLog() {
+    return {
+      sessionId: "browser-preview",
+      filePath: "/Vorschau/MyFileSorter/logs/session-browser-preview.jsonl",
+      entries: [
+        { timestamp: new Date().toISOString(), level: "info", component: "app", message: "Browser-Vorschau gestartet", details: {} },
+        { timestamp: new Date().toISOString(), level: "info", component: "scan", message: "Lokaler Scan abgeschlossen", details: { books: "1", audioFiles: "2" } },
+      ],
+    };
+  },
 };
 
 function escapeHTML(value = "") {
@@ -207,6 +217,38 @@ function toast(message, isError = false) {
   toast.timer = setTimeout(() => element.classList.add("hidden"), 3800);
 }
 
+async function showSessionLog() {
+  const overlay = $("#log-overlay");
+  const content = $("#log-content");
+  overlay.classList.remove("hidden");
+  content.innerHTML = `<div class="online-loading"><span></span>Log wird geladen …</div>`;
+  try {
+    const snapshot = await api().GetSessionLog();
+    const entries = [...(snapshot.entries || [])].reverse();
+    content.innerHTML = `
+      <div class="log-meta"><span>Sitzung <strong>${escapeHTML(snapshot.sessionId)}</strong></span><span title="${escapeHTML(snapshot.filePath)}">${escapeHTML(snapshot.filePath || "Nur im Arbeitsspeicher")}</span></div>
+      ${snapshot.warning ? `<div class="warning-list">${escapeHTML(snapshot.warning)}</div>` : ""}
+      <div class="log-entries">
+        ${entries.length ? entries.map(logEntry).join("") : `<div class="no-candidates">Noch keine Logeinträge in dieser Sitzung.</div>`}
+      </div>
+    `;
+  } catch (error) {
+    content.innerHTML = `<div class="online-error"><strong>Log konnte nicht geladen werden</strong><p>${escapeHTML(String(error))}</p></div>`;
+  }
+}
+
+function logEntry(entry) {
+  const time = new Date(entry.timestamp).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const details = Object.entries(entry.details || {});
+  return `
+    <article class="log-entry ${escapeHTML(entry.level)}">
+      <div class="log-entry-head"><time>${escapeHTML(time)}</time><b>${escapeHTML(entry.level)}</b><span>${escapeHTML(entry.component)}</span></div>
+      <strong>${escapeHTML(entry.message)}</strong>
+      ${details.length ? `<dl>${details.map(([key, value]) => `<div><dt>${escapeHTML(key)}</dt><dd>${escapeHTML(value)}</dd></div>`).join("")}</dl>` : ""}
+    </article>
+  `;
+}
+
 async function chooseDirectory(input, title) {
   try {
     const path = await api().SelectDirectory(title);
@@ -262,21 +304,34 @@ function renderList() {
     return;
   }
   list.innerHTML = state.proposals.map((proposal) => `
-    <button class="book-item ${proposal.id === state.selectedId ? "active" : ""}" data-id="${proposal.id}">
-      <span class="status-dot ${proposal.status}"></span>
+    <div class="book-item ${proposal.id === state.selectedId ? "active" : ""}" data-id="${proposal.id}" role="button" tabindex="0">
+      <input class="book-ready" type="checkbox" aria-label="Für Import auswählen" data-ready-id="${proposal.id}"
+        ${proposal.status === "confirmed" || proposal.status === "imported" ? "checked" : ""}
+        ${proposal.status === "imported" ? "disabled" : ""} />
       <span class="book-copy">
         <strong>${escapeHTML(displayBookTitle(proposal))}</strong>
         <small>${escapeHTML(proposal.metadata.author)} · ${proposal.files.length} Datei${proposal.files.length === 1 ? "" : "en"}</small>
         <small class="source-path" title="${escapeHTML(proposal.groupPath)}">${escapeHTML(displaySourcePath(proposal))}</small>
       </span>
       <span class="status-pill ${proposal.status}">${statusLabel(proposal.status)}</span>
-    </button>
+    </div>
   `).join("");
-  list.querySelectorAll(".book-item").forEach((button) => {
-    button.addEventListener("click", () => {
-      state.selectedId = button.dataset.id;
+  list.querySelectorAll(".book-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      state.selectedId = item.dataset.id;
       render();
     });
+    item.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        state.selectedId = item.dataset.id;
+        render();
+      }
+    });
+  });
+  list.querySelectorAll(".book-ready").forEach((checkbox) => {
+    checkbox.addEventListener("click", (event) => event.stopPropagation());
+    checkbox.addEventListener("change", () => toggleReady(checkbox.dataset.readyId, checkbox.checked));
   });
 }
 
@@ -330,18 +385,33 @@ function renderDetail() {
     <div class="actions">
       <button class="ghost" id="online" title="Folgt im nächsten Inkrement">Online suchen</button>
       <button class="ghost" id="ai" title="Folgt im nächsten Inkrement">Mit AI analysieren</button>
+      <label class="ready-toggle"><input type="checkbox" id="detail-ready" ${proposal.status === "confirmed" || proposal.status === "imported" ? "checked" : ""} ${proposal.status === "imported" ? "disabled" : ""} /> Für Import auswählen</label>
       <span class="action-spacer"></span>
       <button class="ghost danger" id="exclude">Überspringen</button>
       <button class="secondary" id="save">Änderungen speichern</button>
-      <button class="primary compact" id="confirm">Bestätigen</button>
+      <button class="primary compact" id="confirm">Fertig & auswählen</button>
     </div>
   `;
   $("#metadata-form").addEventListener("submit", (event) => event.preventDefault());
   $("#save").addEventListener("click", () => saveProposal(proposal, false));
   $("#confirm").addEventListener("click", () => saveProposal(proposal, true));
+  $("#detail-ready").addEventListener("change", (event) => {
+    if (event.target.checked) saveProposal(proposal, true);
+    else setStatus(proposal.id, "review_required");
+  });
   $("#exclude").addEventListener("click", () => setStatus(proposal.id, "excluded"));
   $("#online").addEventListener("click", () => showProviderChoice(proposal));
   $("#ai").addEventListener("click", () => toast("Die lokale AI-Eskalationsstufe folgt nach den Provider-Schnittstellen."));
+}
+
+async function toggleReady(id, checked) {
+  try {
+    replaceProposal(await api().SetProposalStatus(id, checked ? "confirmed" : "review_required"));
+    toast(checked ? "Hörbuch für den Import ausgewählt." : "Hörbuch bleibt im Quellordner.");
+  } catch (error) {
+    toast(String(error), true);
+    render();
+  }
 }
 
 function renderCompanions(companions) {
@@ -431,6 +501,7 @@ async function applyCandidate(proposalId, candidateId) {
     toast("Online-Treffer als neuer Vorschlag übernommen. Bitte noch bestätigen.");
   } catch (error) {
     toast(String(error), true);
+    render();
   }
 }
 
@@ -456,6 +527,7 @@ async function saveProposal(proposal, confirm) {
     toast(confirm ? "Vorschlag bestätigt." : "Änderungen gespeichert.");
   } catch (error) {
     toast(String(error), true);
+    render();
   }
 }
 
@@ -599,3 +671,12 @@ $("#choose-source").addEventListener("click", () => chooseDirectory($("#source")
 $("#choose-target").addEventListener("click", () => chooseDirectory($("#target"), "Zielordner auswählen"));
 $("#scan").addEventListener("click", scan);
 $("#build-plan").addEventListener("click", buildPlan);
+$("#open-log").addEventListener("click", showSessionLog);
+$("#refresh-log").addEventListener("click", showSessionLog);
+$("#close-log").addEventListener("click", () => $("#log-overlay").classList.add("hidden"));
+$("#log-overlay").addEventListener("click", (event) => {
+  if (event.target === $("#log-overlay")) $("#log-overlay").classList.add("hidden");
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") $("#log-overlay").classList.add("hidden");
+});

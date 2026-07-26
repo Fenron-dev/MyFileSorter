@@ -15,8 +15,9 @@ var numberChunk = regexp.MustCompile(`\d+|\D+`)
 
 var (
 	folderSeparators = regexp.MustCompile(`[._]+`)
-	releaseMarker    = regexp.MustCompile(`(?i)\s*(?:\(|\[|,)?\s*(?:ungekürzt|ungekuerzt|abook|audiobook)\s*(?:\)|\]|,)?\s*`)
-	editionMarker    = regexp.MustCompile(`(?i)[(\[]\s*(ungekürzt|ungekuerzt|gekürzt|gekuerzt|unabridged|abridged)\s*[)\]]`)
+	releaseMarker    = regexp.MustCompile(`(?i)\b(?:abook|audiobook)\b`)
+	editionMarker    = regexp.MustCompile(`(?i)\b(ungekürzt|ungekuerzt|gekürzt|gekuerzt|unabridged|abridged)\b`)
+	emptyBrackets    = regexp.MustCompile(`(?:\(\s*\)|\[\s*\])`)
 	trailingSequence = regexp.MustCompile(`(?i)^(.*?)\s+(?:band|teil)?\s*(\d+(?:[.,]\d+)?)$`)
 )
 
@@ -98,6 +99,7 @@ func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folde
 }
 
 func extractEditionInfo(value string) string {
+	value = normalizeEditionUnicode(value)
 	match := editionMarker.FindStringSubmatch(value)
 	if len(match) != 2 {
 		return ""
@@ -113,7 +115,17 @@ func extractEditionInfo(value string) string {
 	}
 }
 
+func normalizeEditionUnicode(value string) string {
+	replacer := strings.NewReplacer(
+		"u\u0308", "ü", "U\u0308", "Ü",
+		"a\u0308", "ä", "A\u0308", "Ä",
+		"o\u0308", "ö", "O\u0308", "Ö",
+	)
+	return replacer.Replace(value)
+}
+
 func cleanFolderName(value string) string {
+	value = normalizeEditionUnicode(value)
 	lower := strings.ToLower(value)
 	for extension := range audioExtensions {
 		if strings.HasSuffix(lower, extension) {
@@ -122,9 +134,11 @@ func cleanFolderName(value string) string {
 		}
 	}
 	value = folderSeparators.ReplaceAllString(value, " ")
+	value = editionMarker.ReplaceAllString(value, " ")
 	value = releaseMarker.ReplaceAllString(value, " ")
+	value = emptyBrackets.ReplaceAllString(value, " ")
 	value = strings.Join(strings.Fields(value), " ")
-	value = strings.Trim(value, " ,-_")
+	value = strings.Trim(value, " ,-_()[]")
 	return value
 }
 

@@ -132,6 +132,25 @@ func TestScanNormalizesTrailingVolumeNumber(t *testing.T) {
 	}
 }
 
+func TestScanRecognizesDecomposedUnicodeEditionMarker(t *testing.T) {
+	root := t.TempDir()
+	bookDir := filepath.Join(root, "Dem.Mikhailov.-.Die.Nullform.1.(Ungeku\u0308rzt),.ABOOK,.mp3")
+	if err := os.Mkdir(bookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "01 - Opening Credits.mp3"), []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := New(nil).Scan(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := result.Proposals[0].Metadata
+	if metadata.Title != "Die Nullform" || metadata.Series != "Die Nullform" || metadata.SeriesSequence != "1" || metadata.EditionInfo != "Ungekürzt" {
+		t.Fatalf("unexpected decomposed unicode inference: %#v", metadata)
+	}
+}
+
 func TestScanClassifiesEbooksAndDiscardableSidecars(t *testing.T) {
 	root := t.TempDir()
 	bookDir := filepath.Join(root, "Autor - Buch")

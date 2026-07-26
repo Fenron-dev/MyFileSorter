@@ -28,6 +28,12 @@ MyFileSorter arbeitet standardmäßig vollständig lokal. Ein Scan löst weder N
 - `conflict`: Zielpfad oder Gruppierung ist nicht eindeutig
 - `error`: Scan oder Metadatenerkennung ist fehlgeschlagen
 
+Die Checkbox eines Vorschlags bildet den Status `confirmed` direkt ab. Nur angehakte Vorschläge werden geplant; alle übrigen Dateien bleiben unverändert im Quellordner.
+
+## Diagnoseprotokoll
+
+Jeder App-Start erzeugt eine eigene JSONL-Logdatei im Benutzer-Konfigurationsordner. Das aktuelle Sitzungslog ist in der App einsehbar und enthält Zeit, Stufe, Komponente, Ereignis und ausgewählte strukturierte Details. Protokolliert werden insbesondere Scan, Reviewstatus, Onlineabgleich, Planung, Import, Undo, Fehler und die zugehörige Journal-ID. Audiodaten, Zugangsdaten und API-Geheimnisse werden nicht protokolliert.
+
 ## Metadatenquellen
 
 Lokale Quellen haben eine nachvollziehbare Priorität:

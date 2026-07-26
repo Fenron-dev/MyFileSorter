@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/dennis/myfilesorter/internal/applog"
 	"github.com/dennis/myfilesorter/internal/domain"
 	"github.com/dennis/myfilesorter/internal/executor"
 	"github.com/dennis/myfilesorter/internal/metadata"
@@ -20,6 +22,7 @@ type App struct {
 	scanner   *scanner.Scanner
 	providers *providers.Registry
 	executor  *executor.Service
+	logger    *applog.Logger
 	mu        sync.RWMutex
 	proposals []domain.BookProposal
 	matches   map[string]map[string]domain.MetadataCandidate
@@ -31,6 +34,7 @@ func NewApp() *App {
 		scanner:   scanner.New(metadata.NewFFProbeReader()),
 		providers: providers.NewRegistry(nil),
 		executor:  executor.New(""),
+		logger:    applog.New(""),
 		matches:   make(map[string]map[string]domain.MetadataCandidate),
 		executed:  make(map[string][]string),
 	}
@@ -38,6 +42,7 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.logger.Info("app", "App-Sitzung gestartet", nil)
 }
 
 func (a *App) SelectDirectory(title string) (string, error) {
@@ -45,14 +50,20 @@ func (a *App) SelectDirectory(title string) (string, error) {
 }
 
 func (a *App) Scan(source string) (domain.ScanResult, error) {
+	a.logger.Info("scan", "Lokaler Scan gestartet", map[string]string{"source": source})
 	result, err := a.scanner.Scan(a.ctx, source)
 	if err != nil {
+		a.logger.Error("scan", "Lokaler Scan fehlgeschlagen", map[string]string{"source": source, "error": err.Error()})
 		return domain.ScanResult{}, err
 	}
 	a.mu.Lock()
 	a.proposals = cloneProposals(result.Proposals)
 	a.matches = make(map[string]map[string]domain.MetadataCandidate)
 	a.mu.Unlock()
+	a.logger.Info("scan", "Lokaler Scan abgeschlossen", map[string]string{
+		"source": result.Source, "books": strconv.Itoa(result.Summary.Books), "audioFiles": strconv.Itoa(result.Summary.Files),
+		"ebooks": strconv.Itoa(result.Summary.Ebooks), "sidecars": strconv.Itoa(result.Summary.Sidecars),
+	})
 	return result, nil
 }
 
@@ -84,6 +95,7 @@ func (a *App) UpdateProposal(id string, update domain.BookMetadata) (domain.Book
 	proposal.Metadata = update
 	proposal.Status = domain.StatusReviewRequired
 	proposal.Confidence = (update.Evidence["title"].Confidence + update.Evidence["author"].Confidence) / 2
+	a.logger.Info("review", "Metadatenvorschlag bearbeitet", map[string]string{"proposalId": id, "title": update.Title})
 	return cloneProposal(*proposal), nil
 }
 
@@ -106,6 +118,7 @@ func (a *App) SetProposalStatus(id string, status domain.ProposalStatus) (domain
 		}
 	}
 	proposal.Status = status
+	a.logger.Info("review", "Auswahlstatus geändert", map[string]string{"proposalId": id, "status": string(status)})
 	return cloneProposal(*proposal), nil
 }
 
@@ -113,19 +126,40 @@ func (a *App) BuildPlan(target string, options domain.PlanOptions) (domain.Opera
 	a.mu.RLock()
 	proposals := cloneProposals(a.proposals)
 	a.mu.RUnlock()
-	return planner.BuildWithOptions(target, proposals, options)
+	plan, err := planner.BuildWithOptions(target, proposals, options)
+	if err != nil {
+		a.logger.Error("plan", "Operationsplan fehlgeschlagen", map[string]string{"target": target, "error": err.Error()})
+		return domain.OperationPlan{}, err
+	}
+	a.logger.Info("plan", "Operationsplan erstellt", map[string]string{
+		"target": plan.TargetRoot, "operations": strconv.Itoa(len(plan.Operations)), "executable": strconv.FormatBool(plan.Executable),
+	})
+	return plan, nil
 }
 
 func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.ExecutionResult, error) {
+	a.logger.Info("import", "Import gestartet", map[string]string{"target": target})
 	a.mu.RLock()
 	proposals := cloneProposals(a.proposals)
 	a.mu.RUnlock()
 	plan, err := planner.BuildWithOptions(target, proposals, options)
 	if err != nil {
+		a.logger.Error("import", "Importplan konnte nicht erstellt werden", map[string]string{"target": target, "error": err.Error()})
 		return domain.ExecutionResult{}, err
 	}
 	if !plan.Executable {
+		a.logger.Warn("import", "Import durch Konflikte blockiert", map[string]string{"target": target})
 		return domain.ExecutionResult{}, fmt.Errorf("der aktuelle Plan enthält Konflikte und kann nicht ausgeführt werden")
+	}
+	for index, operation := range plan.Operations {
+		targetPath := operation.Target
+		if operation.Action == "remove" {
+			targetPath = "Undo-fähige Quarantäne"
+		}
+		a.logger.Info("import.file", "Dateioperation vorgesehen", map[string]string{
+			"index": strconv.Itoa(index + 1), "action": operation.Action, "category": operation.Category,
+			"source": operation.Source, "target": targetPath,
+		})
 	}
 	result, err := a.executor.Execute(a.ctx, plan)
 	if result.JournalID != "" {
@@ -138,12 +172,26 @@ func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.Exe
 			setExecutionFailure(a.proposals, proposalIDs, result.JournalID)
 		}
 		a.mu.Unlock()
+		logDetails := map[string]string{
+			"journalId": result.JournalID, "status": result.Status,
+			"completed": strconv.Itoa(result.Completed), "total": strconv.Itoa(result.Total),
+		}
+		if result.Error != "" {
+			logDetails["error"] = result.Error
+			a.logger.Error("import", "Import nicht vollständig abgeschlossen", logDetails)
+		} else {
+			a.logger.Info("import", "Import abgeschlossen", logDetails)
+		}
 		return result, nil
+	}
+	if err != nil {
+		a.logger.Error("import", "Import fehlgeschlagen", map[string]string{"target": target, "error": err.Error()})
 	}
 	return result, err
 }
 
 func (a *App) UndoExecution(journalID string) (domain.ExecutionResult, error) {
+	a.logger.Info("undo", "Undo gestartet", map[string]string{"journalId": journalID})
 	result, err := a.executor.Undo(a.ctx, journalID)
 	if result.Status == "undone" {
 		a.mu.Lock()
@@ -153,12 +201,23 @@ func (a *App) UndoExecution(journalID string) (domain.ExecutionResult, error) {
 		a.mu.Unlock()
 	}
 	if result.JournalID != "" {
+		details := map[string]string{"journalId": journalID, "status": result.Status}
+		if result.Error != "" {
+			details["error"] = result.Error
+			a.logger.Error("undo", "Undo nicht vollständig abgeschlossen", details)
+		} else {
+			a.logger.Info("undo", "Undo abgeschlossen", details)
+		}
 		return result, nil
+	}
+	if err != nil {
+		a.logger.Error("undo", "Undo fehlgeschlagen", map[string]string{"journalId": journalID, "error": err.Error()})
 	}
 	return result, err
 }
 
 func (a *App) SearchOnline(id, provider, region string) ([]domain.MetadataCandidate, error) {
+	a.logger.Info("online", "Onlineabgleich gestartet", map[string]string{"proposalId": id, "provider": provider, "region": region})
 	a.mu.RLock()
 	proposal, err := a.findProposal(id)
 	if err != nil {
@@ -184,6 +243,7 @@ func (a *App) SearchOnline(id, provider, region string) ([]domain.MetadataCandid
 
 	results, err := a.providers.Search(a.ctx, provider, query)
 	if err != nil {
+		a.logger.Error("online", "Onlineabgleich fehlgeschlagen", map[string]string{"proposalId": id, "provider": provider, "error": err.Error()})
 		return nil, err
 	}
 	a.mu.Lock()
@@ -193,6 +253,7 @@ func (a *App) SearchOnline(id, provider, region string) ([]domain.MetadataCandid
 	}
 	a.matches[id] = byID
 	a.mu.Unlock()
+	a.logger.Info("online", "Onlineabgleich abgeschlossen", map[string]string{"proposalId": id, "provider": provider, "results": strconv.Itoa(len(results))})
 	return results, nil
 }
 
@@ -210,7 +271,14 @@ func (a *App) ApplyOnlineCandidate(proposalID, candidateID string) (domain.BookP
 	applyCandidate(&proposal.Metadata, candidate)
 	proposal.Status = domain.StatusReviewRequired
 	proposal.Confidence = candidate.Confidence
+	a.logger.Info("online", "Online-Treffer übernommen", map[string]string{
+		"proposalId": proposalID, "candidateId": candidateID, "provider": candidate.Provider, "title": candidate.Title,
+	})
 	return cloneProposal(*proposal), nil
+}
+
+func (a *App) GetSessionLog() domain.LogSnapshot {
+	return a.logger.Snapshot()
 }
 
 func (a *App) findProposal(id string) (*domain.BookProposal, error) {

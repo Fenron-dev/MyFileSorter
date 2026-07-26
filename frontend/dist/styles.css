@@ -16,7 +16,10 @@ button:disabled { cursor: wait; opacity: .6; }
 .brand-mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: #f7f4ed; background: #204e43; font-family: Georgia, serif; font-size: 22px; }
 .eyebrow, .step-label, .detail-kicker { margin: 0 0 4px; color: #897c68; font-size: 10px; font-weight: 800; letter-spacing: .17em; }
 .topbar h1 { margin: 0; font-family: Georgia, serif; font-size: 21px; font-weight: 600; }
-.local-badge { margin-left: auto; display: flex; align-items: center; gap: 8px; color: #39675c; font-size: 12px; font-weight: 700; }
+.log-button { margin-left: auto; padding: 8px 10px; color: #53665f; border: 1px solid #d0cbc1; border-radius: 8px; background: transparent; font-size: 10px; font-weight: 800; }
+.log-button:hover { background: #eeebe3; }
+.log-button span { margin-right: 5px; font-size: 14px; }
+.local-badge { display: flex; align-items: center; gap: 8px; color: #39675c; font-size: 12px; font-weight: 700; }
 .local-badge span { width: 8px; height: 8px; border-radius: 50%; background: #53a277; box-shadow: 0 0 0 4px #dcebe2; }
 main { padding-bottom: 80px; }
 .hero { min-height: 420px; padding: 68px 7vw; display: grid; grid-template-columns: 1.1fr .9fr; align-items: center; gap: 8vw; border-bottom: 1px solid #d7d2c7; }
@@ -47,9 +50,11 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .notice { margin-bottom: 14px; }
 .review-layout { min-height: 470px; display: grid; grid-template-columns: minmax(290px, .8fr) minmax(520px, 1.7fr); overflow: hidden; border: 1px solid #d1cbc0; border-radius: 16px; background: #fbfaf6; box-shadow: 0 12px 42px rgba(51, 55, 50, .07); }
 .book-list { overflow: auto; border-right: 1px solid #d8d2c8; background: #f1eee7; }
-.book-item { width: 100%; padding: 18px 16px; display: flex; align-items: center; gap: 11px; text-align: left; color: inherit; border: 0; border-bottom: 1px solid #ddd7cd; background: transparent; }
+.book-item { width: 100%; padding: 18px 16px; display: flex; align-items: center; gap: 11px; text-align: left; color: inherit; border: 0; border-bottom: 1px solid #ddd7cd; background: transparent; cursor: pointer; }
 .book-item:hover { background: #f8f6f0; }
+.book-item:focus-visible { outline: 2px solid #3f7668; outline-offset: -2px; }
 .book-item.active { background: #fffdfa; box-shadow: inset 3px 0 #b26b3d; }
+.book-ready { width: 17px; height: 17px; flex: 0 0 auto; accent-color: #35765d; cursor: pointer; }
 .book-copy { min-width: 0; flex: 1; }
 .book-copy strong, .book-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .book-copy strong { margin-bottom: 5px; font-family: Georgia, serif; font-size: 15px; }
@@ -86,6 +91,8 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .companion-kind { width: max-content; padding: 3px 6px; border-radius: 12px; color: #27634d; background: #dcece2; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .companion-kind.discard { color: #805a32; background: #f3e3c9; }
 .actions { margin-top: 20px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.ready-toggle { padding: 9px 10px; display: flex; align-items: center; gap: 7px; color: #315d4e; border: 1px solid #bfd1c8; border-radius: 9px; background: #edf5f0; font-size: 10px; font-weight: 800; cursor: pointer; }
+.ready-toggle input { width: 15px; height: 15px; accent-color: #35765d; }
 .action-spacer { flex: 1; }
 .online-panel { margin-top: 18px; padding: 18px; border: 1px solid #ccc5b9; border-radius: 12px; background: #f6f3eb; }
 .online-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
@@ -138,6 +145,27 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .undo-box { padding: 14px 0; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #69736e; font-size: 11px; }
 .toast { position: fixed; right: 24px; bottom: 24px; max-width: 430px; padding: 13px 17px; color: #fff; border-radius: 9px; background: #234f44; box-shadow: 0 12px 40px rgba(0,0,0,.2); font-size: 12px; z-index: 10; }
 .toast.error { background: #8b3f38; }
+.log-overlay { position: fixed; inset: 0; padding: 5vh 5vw; display: grid; place-items: center; background: rgba(25,34,31,.48); backdrop-filter: blur(3px); z-index: 20; }
+.log-dialog { width: min(980px, 92vw); height: min(760px, 90vh); display: flex; flex-direction: column; overflow: hidden; border: 1px solid #c9c3b8; border-radius: 16px; background: #f8f6f0; box-shadow: 0 28px 90px rgba(0,0,0,.28); }
+.log-dialog > header { padding: 20px 22px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #d8d2c8; }
+.log-dialog h2 { margin: 2px 0 0; font-family: Georgia, serif; font-size: 28px; font-weight: 500; }
+.log-header-actions { display: flex; align-items: center; gap: 12px; }
+.log-content { min-height: 0; padding: 18px 22px 24px; flex: 1; overflow: auto; }
+.log-meta { margin-bottom: 14px; display: flex; justify-content: space-between; gap: 20px; color: #80796f; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }
+.log-meta span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.log-entries { display: grid; gap: 8px; }
+.log-entry { padding: 12px 14px; border: 1px solid #dcd6cb; border-left: 3px solid #5d8a78; border-radius: 8px; background: #fffdfa; }
+.log-entry.warning { border-left-color: #c48b32; }
+.log-entry.error { border-left-color: #a84e46; }
+.log-entry-head { margin-bottom: 6px; display: flex; align-items: center; gap: 9px; color: #8b857c; font-size: 8px; text-transform: uppercase; }
+.log-entry-head b { padding: 2px 5px; border-radius: 8px; color: #386653; background: #dfede6; }
+.log-entry.warning .log-entry-head b { color: #78551e; background: #f5e5bd; }
+.log-entry.error .log-entry-head b { color: #803c35; background: #f3deda; }
+.log-entry > strong { font-size: 11px; }
+.log-entry dl { margin: 9px 0 0; display: grid; gap: 4px; }
+.log-entry dl div { display: grid; grid-template-columns: 110px 1fr; gap: 10px; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }
+.log-entry dt { color: #8c867d; }
+.log-entry dd { margin: 0; overflow-wrap: anywhere; color: #5d625f; }
 
 @media (max-width: 1000px) {
   .hero { padding-inline: 5vw; gap: 5vw; }

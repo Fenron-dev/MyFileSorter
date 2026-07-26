@@ -136,6 +136,21 @@ type ExecutionResult struct {
 	Warnings   []string `json:"warnings,omitempty"`
 }
 
+type LogEntry struct {
+	Timestamp time.Time         `json:"timestamp"`
+	Level     string            `json:"level"`
+	Component string            `json:"component"`
+	Message   string            `json:"message"`
+	Details   map[string]string `json:"details,omitempty"`
+}
+
+type LogSnapshot struct {
+	SessionID string     `json:"sessionId"`
+	FilePath  string     `json:"filePath,omitempty"`
+	Warning   string     `json:"warning,omitempty"`
+	Entries   []LogEntry `json:"entries"`
+}
+
 type MetadataSearchQuery struct {
 	Title    string `json:"title"`
 	Author   string `json:"author,omitempty"`
