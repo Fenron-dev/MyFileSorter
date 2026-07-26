@@ -886,7 +886,9 @@ async function executePlan() {
     if (result.status === "completed") {
       state.proposals.filter((item) => item.status === "confirmed").forEach((item) => { item.status = "imported"; });
       renderList();
-      toast("Dateien wurden erfolgreich verschoben.");
+      toast(result.warnings?.length
+        ? "Dateien wurden übertragen; einige Quellen konnten nicht gelöscht werden."
+        : "Dateien wurden erfolgreich verschoben.");
     } else {
       if (result.completed > 0) {
         state.proposals.filter((item) => item.status === "confirmed").forEach((item) => { item.status = "error"; });
@@ -947,11 +949,12 @@ function renderExecutionResult(result) {
   const output = $("#plan-output");
   const successful = result.status === "completed";
   const undone = result.status === "undone";
+  const retainedSources = successful && result.warnings?.some((warning) => String(warning).includes("Löschrechte"));
   const canUndo = !undone && result.completed > 0 && result.journalId;
   const needsRescan = isSourceError(result.error);
   output.innerHTML = `
     <div class="plan-summary ${successful || undone ? "ready" : "blocked"}">
-      <strong>${successful ? "Dateien verschoben" : undone ? "Verschieben rückgängig gemacht" : "Verschieben unterbrochen"}</strong>
+      <strong>${successful ? retainedSources ? "Dateien übertragen – Quellen teilweise behalten" : "Dateien verschoben" : undone ? "Verschieben rückgängig gemacht" : "Verschieben unterbrochen"}</strong>
       <span>${result.completed} von ${result.total} Operationen · ${formatBytes(result.totalBytes)}</span>
     </div>
     ${result.error ? `<div class="warning-list">${escapeHTML(result.error)}</div>` : ""}

@@ -192,6 +192,9 @@ func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.Exe
 		if result.Error != "" {
 			logDetails["error"] = result.Error
 			a.logger.Error("move", "Verschieben nicht vollständig abgeschlossen", logDetails)
+		} else if len(result.Warnings) > 0 {
+			logDetails["warnings"] = strings.Join(result.Warnings, " | ")
+			a.logger.Warn("move", "Übertragung abgeschlossen; Quelldateien teilweise beibehalten", logDetails)
 		} else {
 			a.logger.Info("move", "Verschieben abgeschlossen", logDetails)
 		}

@@ -24,6 +24,7 @@ const journalVersion = 1
 type Service struct {
 	journalDir string
 	now        func() time.Time
+	removeFile func(string) error
 }
 
 type Journal struct {
@@ -38,19 +39,24 @@ type Journal struct {
 }
 
 type JournalOperation struct {
-	ProposalID string    `json:"proposalId"`
-	Action     string    `json:"action"`
-	Category   string    `json:"category"`
-	Source     string    `json:"source"`
-	Target     string    `json:"target"`
-	Size       int64     `json:"size"`
-	SHA256     string    `json:"sha256,omitempty"`
-	Status     string    `json:"status"`
-	UpdatedAt  time.Time `json:"updatedAt,omitempty"`
+	ProposalID string `json:"proposalId"`
+	Action     string `json:"action"`
+	Category   string `json:"category"`
+	Source     string `json:"source"`
+	Target     string `json:"target"`
+	Size       int64  `json:"size"`
+	SHA256     string `json:"sha256,omitempty"`
+
+	// SourceRetained records the safe copy-only fallback used when the target
+	// was verified but the source filesystem refused deletion.
+	SourceRetained    bool      `json:"sourceRetained,omitempty"`
+	SourceRemoveError string    `json:"sourceRemoveError,omitempty"`
+	Status            string    `json:"status"`
+	UpdatedAt         time.Time `json:"updatedAt,omitempty"`
 }
 
 func New(journalDir string) *Service {
-	return &Service{journalDir: journalDir, now: time.Now}
+	return &Service{journalDir: journalDir, now: time.Now, removeFile: os.Remove}
 }
 
 func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domain.ExecutionResult, error) {
@@ -98,7 +104,7 @@ func (s *Service) ExecuteWithProgress(ctx context.Context, plan domain.Operation
 		if err := s.save(journal); err != nil {
 			return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("Journal vorbereiten: %w", err)
 		}
-		checksum, size, moveErr := transfer(ctx, op.Source, op.Target, op.Size)
+		checksum, size, sourceRemoveError, moveErr := s.transfer(ctx, op.Source, op.Target, op.Size)
 		if moveErr != nil {
 			op.Status = "failed"
 			op.UpdatedAt = s.now()
@@ -112,6 +118,8 @@ func (s *Service) ExecuteWithProgress(ctx context.Context, plan domain.Operation
 		}
 		op.SHA256 = checksum
 		op.Size = size
+		op.SourceRetained = sourceRemoveError != ""
+		op.SourceRemoveError = sourceRemoveError
 		op.Status = "completed"
 		op.UpdatedAt = s.now()
 		journal.UpdatedAt = s.now()
@@ -279,7 +287,15 @@ func (s *Service) Undo(ctx context.Context, journalID string) (domain.ExecutionR
 			_ = s.save(journal)
 			return resultFromJournal(journal), hashErr
 		}
-		if _, _, moveErr := transfer(ctx, op.Target, op.Source, op.Size); moveErr != nil {
+		if op.SourceRetained {
+			if removeErr := s.removeFile(op.Target); removeErr != nil {
+				journal.Status = "undo_failed"
+				journal.Error = fmt.Sprintf("kopierte Zieldatei beim Undo entfernen: %v", removeErr)
+				journal.UpdatedAt = s.now()
+				_ = s.save(journal)
+				return resultFromJournal(journal), errors.New(journal.Error)
+			}
+		} else if _, _, _, moveErr := s.transfer(ctx, op.Target, op.Source, op.Size); moveErr != nil {
 			journal.Status = "undo_failed"
 			journal.Error = moveErr.Error()
 			journal.UpdatedAt = s.now()
@@ -417,34 +433,34 @@ func (s *Service) load(journalID string) (*Journal, error) {
 	return &journal, nil
 }
 
-func transfer(ctx context.Context, source, target string, expectedSize int64) (string, int64, error) {
+func (s *Service) transfer(ctx context.Context, source, target string, expectedSize int64) (string, int64, string, error) {
 	info, err := os.Lstat(source)
 	if err != nil {
-		return "", 0, fmt.Errorf("Quelle prüfen: %w", err)
+		return "", 0, "", fmt.Errorf("Quelle prüfen: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return "", 0, fmt.Errorf("Quelle ist keine reguläre Datei: %s", source)
+		return "", 0, "", fmt.Errorf("Quelle ist keine reguläre Datei: %s", source)
 	}
 	if expectedSize > 0 && info.Size() != expectedSize {
-		return "", 0, fmt.Errorf("Quelldatei wurde seit dem Plan verändert: %s", source)
+		return "", 0, "", fmt.Errorf("Quelldatei wurde seit dem Plan verändert: %s", source)
 	}
 	if _, err := os.Lstat(target); err == nil {
-		return "", 0, fmt.Errorf("Zieldatei existiert bereits: %s", target)
+		return "", 0, "", fmt.Errorf("Zieldatei existiert bereits: %s", target)
 	} else if !os.IsNotExist(err) {
-		return "", 0, fmt.Errorf("Ziel prüfen: %w", err)
+		return "", 0, "", fmt.Errorf("Ziel prüfen: %w", err)
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-		return "", 0, fmt.Errorf("Zielordner anlegen: %w", err)
+		return "", 0, "", fmt.Errorf("Zielordner anlegen: %w", err)
 	}
 
 	sourceFile, err := os.Open(source)
 	if err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	temporary, err := os.CreateTemp(filepath.Dir(target), ".myfilesorter-*.part")
 	if err != nil {
 		sourceFile.Close()
-		return "", 0, err
+		return "", 0, "", err
 	}
 	temporaryName := temporary.Name()
 	defer os.Remove(temporaryName)
@@ -460,33 +476,32 @@ func transfer(ctx context.Context, source, target string, expectedSize int64) (s
 		copyErr = closeErr
 	}
 	if copyErr != nil {
-		return "", 0, fmt.Errorf("Datei kopieren: %w", copyErr)
+		return "", 0, "", fmt.Errorf("Datei kopieren: %w", copyErr)
 	}
 	if written != info.Size() {
-		return "", 0, fmt.Errorf("unvollständige Kopie: %s", target)
+		return "", 0, "", fmt.Errorf("unvollständige Kopie: %s", target)
 	}
 	expectedHash := hex.EncodeToString(hash.Sum(nil))
 	actualHash, actualSize, err := checksumFile(ctx, temporaryName)
 	if err != nil {
-		return "", 0, fmt.Errorf("Kopie prüfen: %w", err)
+		return "", 0, "", fmt.Errorf("Kopie prüfen: %w", err)
 	}
 	if expectedHash != actualHash || actualSize != written {
-		return "", 0, fmt.Errorf("Prüfsummenvergleich fehlgeschlagen: %s", target)
+		return "", 0, "", fmt.Errorf("Prüfsummenvergleich fehlgeschlagen: %s", target)
 	}
 	if err := os.Chmod(temporaryName, info.Mode().Perm()); err != nil {
-		return "", 0, err
+		return "", 0, "", err
 	}
 	if err := os.Rename(temporaryName, target); err != nil {
-		return "", 0, fmt.Errorf("Zieldatei finalisieren: %w", err)
+		return "", 0, "", fmt.Errorf("Zieldatei finalisieren: %w", err)
 	}
-	if err := os.Remove(source); err != nil {
-		rollbackErr := os.Remove(target)
-		if rollbackErr != nil {
-			return "", 0, fmt.Errorf("Quelle entfernen: %v; Ziel-Rollback fehlgeschlagen: %w", err, rollbackErr)
-		}
-		return "", 0, fmt.Errorf("Quelle entfernen: %w", err)
+	if err := s.removeFile(source); err != nil {
+		// The target is already complete and hash-verified. Keep it instead of
+		// discarding a successful transfer merely because a read-only share or
+		// restrictive ACL does not permit deleting the source.
+		return expectedHash, written, err.Error(), nil
 	}
-	return expectedHash, written, nil
+	return expectedHash, written, "", nil
 }
 
 func checksumFile(ctx context.Context, path string) (string, int64, error) {
@@ -534,11 +549,22 @@ func resultFromJournal(journal *Journal) domain.ExecutionResult {
 	result := domain.ExecutionResult{
 		JournalID: journal.ID, Status: journal.Status, Total: len(journal.Operations), Error: journal.Error,
 	}
+	retainedSources := make([]string, 0)
 	for _, operation := range journal.Operations {
 		if operation.Status == "completed" || operation.Status == "undone" {
 			result.Completed++
 			result.TotalBytes += operation.Size
 		}
+		if operation.Status == "completed" && operation.SourceRetained {
+			retainedSources = append(retainedSources, operation.Source)
+		}
+	}
+	if len(retainedSources) > 0 {
+		example := retainedSources[0]
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%d Quelldatei(en) konnten wegen fehlender Löschrechte nicht entfernt werden. Die vollständig geprüften Zieldateien wurden beibehalten. Beispiel: %s",
+			len(retainedSources), example,
+		))
 	}
 	return result
 }
@@ -566,7 +592,23 @@ func reconcileInterrupted(ctx context.Context, operation *JournalOperation) erro
 		operation.Status = "completed"
 		return nil
 	case sourceExists && targetExists:
-		return fmt.Errorf("unterbrochene Operation ist mehrdeutig; Quelle und Ziel existieren: %s", operation.Source)
+		sourceHash, sourceSize, sourceErr := checksumFile(ctx, operation.Source)
+		targetHash, targetSize, targetErr := checksumFile(ctx, operation.Target)
+		if sourceErr != nil {
+			return sourceErr
+		}
+		if targetErr != nil {
+			return targetErr
+		}
+		if sourceHash != targetHash || sourceSize != targetSize {
+			return fmt.Errorf("unterbrochene Operation ist mehrdeutig; Quelle und Ziel unterscheiden sich: %s", operation.Source)
+		}
+		operation.SHA256 = targetHash
+		operation.Size = targetSize
+		operation.SourceRetained = true
+		operation.SourceRemoveError = "App wurde nach geprüfter Kopie beendet oder Quelle konnte nicht entfernt werden"
+		operation.Status = "completed"
+		return nil
 	default:
 		return fmt.Errorf("unterbrochene Operation ist unvollständig; Quelle und Ziel fehlen: %s", operation.Source)
 	}

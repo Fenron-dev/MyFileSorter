@@ -19,7 +19,9 @@ jobs:
           go-version: '1.23.x'
           cache: false
       - name: Check formatting
-        run: test -z "$(gofmt -l .)"
+        run: |
+          gofmt -d .
+          test -z "$(gofmt -l .)"
       - name: Run core tests
         run: go test ./internal/...
       - name: Check frontend JavaScript

@@ -46,6 +46,64 @@ func TestExecuteAndUndo(t *testing.T) {
 	}
 }
 
+func TestExecuteKeepsVerifiedTargetWhenSourceCannotBeRemoved(t *testing.T) {
+	root := t.TempDir()
+	firstSource := filepath.Join(root, "readonly-source", "01.mp3")
+	secondSource := filepath.Join(root, "source", "02.mp3")
+	firstTarget := filepath.Join(root, "library", "01.mp3")
+	secondTarget := filepath.Join(root, "library", "02.mp3")
+	writeTestFile(t, firstSource, "first")
+	writeTestFile(t, secondSource, "second")
+	service := New(filepath.Join(root, "journals"))
+	service.removeFile = func(path string) error {
+		if path == firstSource {
+			return os.ErrPermission
+		}
+		return os.Remove(path)
+	}
+
+	result, err := service.Execute(context.Background(), domain.OperationPlan{
+		Executable: true,
+		Operations: []domain.PlannedOperation{
+			{Source: firstSource, Target: firstTarget, Size: 5},
+			{Source: secondSource, Target: secondTarget, Size: 6},
+		},
+	})
+	if err != nil || result.Status != "completed" || result.Completed != 2 {
+		t.Fatalf("unexpected copy-only fallback result: %#v, %v", result, err)
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "fehlender Löschrechte") {
+		t.Fatalf("missing retained-source warning: %#v", result.Warnings)
+	}
+	if data, readErr := os.ReadFile(firstSource); readErr != nil || string(data) != "first" {
+		t.Fatalf("retained source changed: %q, %v", data, readErr)
+	}
+	if data, readErr := os.ReadFile(firstTarget); readErr != nil || string(data) != "first" {
+		t.Fatalf("verified target missing: %q, %v", data, readErr)
+	}
+	if _, statErr := os.Stat(secondSource); !os.IsNotExist(statErr) {
+		t.Fatalf("second source should have moved normally: %v", statErr)
+	}
+
+	journal, loadErr := service.load(result.JournalID)
+	if loadErr != nil || !journal.Operations[0].SourceRetained || journal.Operations[0].SourceRemoveError == "" {
+		t.Fatalf("retained source not journaled: %#v, %v", journal, loadErr)
+	}
+	undo, undoErr := service.Undo(context.Background(), result.JournalID)
+	if undoErr != nil || undo.Status != "undone" {
+		t.Fatalf("copy-only fallback could not be undone: %#v, %v", undo, undoErr)
+	}
+	if _, statErr := os.Stat(firstTarget); !os.IsNotExist(statErr) {
+		t.Fatalf("copied target should be removed by undo: %v", statErr)
+	}
+	if data, readErr := os.ReadFile(firstSource); readErr != nil || string(data) != "first" {
+		t.Fatalf("original retained source should remain after undo: %q, %v", data, readErr)
+	}
+	if data, readErr := os.ReadFile(secondSource); readErr != nil || string(data) != "second" {
+		t.Fatalf("normally moved source should be restored: %q, %v", data, readErr)
+	}
+}
+
 func TestExecuteDoesNotOverwriteTarget(t *testing.T) {
 	root := t.TempDir()
 	source := filepath.Join(root, "source.m4b")

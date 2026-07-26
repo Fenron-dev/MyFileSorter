@@ -87,6 +87,7 @@ Umgesetzt sind Profile für Ollama, LM Studio, OpenAI, OpenRouter, Groq und benu
 - Nach der geprüften Vorschau ist die sichtbare Checkbox die ausdrückliche Ausführungsfreigabe; der Verschiebe-Button verwendet exakt den Zielpfad und die Optionen dieser Vorschau.
 - Die Datei wird unabhängig vom Dateisystem zunächst temporär kopiert.
 - Quelle und Kopie werden per SHA-256 verglichen, die Kopie atomar finalisiert und erst danach die Quelle entfernt.
+- Verweigert das Quelllaufwerk nach erfolgreicher Prüfung das Löschen, bleibt die verifizierte Zieldatei bestehen. Der Lauf wird fortgesetzt und weist die nicht entfernten Quellen gesammelt als Warnung aus; Undo entfernt in diesem Fall nur die neue Kopie.
 - Jede Operation wird journalisiert.
 - Die Desktop-Oberfläche erhält nach jeder abgeschlossenen Operation einen Fortschrittsstand mit Datei- und Bytezähler.
 - Undo ist erlaubt, solange das Ziel nicht nachträglich verändert wurde.
