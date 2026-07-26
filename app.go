@@ -146,7 +146,7 @@ func (a *App) BuildPlan(target string, options domain.PlanOptions) (domain.Opera
 }
 
 func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.ExecutionResult, error) {
-	a.logger.Info("import", "Import gestartet", map[string]string{
+	a.logger.Info("move", "Verschieben gestartet", map[string]string{
 		"target": target, "bookNumberWidth": strconv.Itoa(options.BookNumberWidth),
 		"trackNumberWidth": strconv.Itoa(options.TrackNumberWidth), "audioFileNaming": options.AudioFileNaming,
 	})
@@ -155,11 +155,11 @@ func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.Exe
 	a.mu.RUnlock()
 	plan, err := planner.BuildWithOptions(target, proposals, options)
 	if err != nil {
-		a.logger.Error("import", "Importplan konnte nicht erstellt werden", map[string]string{"target": target, "error": err.Error()})
+		a.logger.Error("move", "Verschiebeplan konnte nicht erstellt werden", map[string]string{"target": target, "error": err.Error()})
 		return domain.ExecutionResult{}, err
 	}
 	if !plan.Executable {
-		a.logger.Warn("import", "Import durch Konflikte blockiert", map[string]string{"target": target})
+		a.logger.Warn("move", "Verschieben durch Konflikte blockiert", map[string]string{"target": target})
 		return domain.ExecutionResult{}, fmt.Errorf("der aktuelle Plan enthält Konflikte und kann nicht ausgeführt werden")
 	}
 	for index, operation := range plan.Operations {
@@ -167,7 +167,7 @@ func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.Exe
 		if operation.Action == "remove" {
 			targetPath = "Undo-fähige Quarantäne"
 		}
-		a.logger.Info("import.file", "Dateioperation vorgesehen", map[string]string{
+		a.logger.Info("move.file", "Dateioperation vorgesehen", map[string]string{
 			"index": strconv.Itoa(index + 1), "action": operation.Action, "category": operation.Category,
 			"source": operation.Source, "target": targetPath,
 		})
@@ -189,14 +189,14 @@ func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.Exe
 		}
 		if result.Error != "" {
 			logDetails["error"] = result.Error
-			a.logger.Error("import", "Import nicht vollständig abgeschlossen", logDetails)
+			a.logger.Error("move", "Verschieben nicht vollständig abgeschlossen", logDetails)
 		} else {
-			a.logger.Info("import", "Import abgeschlossen", logDetails)
+			a.logger.Info("move", "Verschieben abgeschlossen", logDetails)
 		}
 		return result, nil
 	}
 	if err != nil {
-		a.logger.Error("import", "Import fehlgeschlagen", map[string]string{"target": target, "error": err.Error()})
+		a.logger.Error("move", "Verschieben fehlgeschlagen", map[string]string{"target": target, "error": err.Error()})
 	}
 	return result, err
 }

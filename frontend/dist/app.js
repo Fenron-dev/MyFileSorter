@@ -712,15 +712,19 @@ async function buildPlan() {
       ${plan.executable ? `
         <div class="execution-box">
           <label><input type="checkbox" id="execution-consent" /> Ich habe Quelle und Ziel geprüft und möchte die angezeigten Dateien verschieben.</label>
-          <button class="primary compact" id="execute-plan" disabled>Import ausführen</button>
+          <button type="button" class="primary compact" id="execute-plan" disabled>Dateien verschieben</button>
+          <p class="execution-status" id="execution-status" aria-live="polite">Nach Aktivierung der Checkbox wird das Verschieben freigegeben.</p>
         </div>
-        <p class="dry-run-note">Die Quelle wird erst nach vollständiger Kopie und erfolgreichem SHA-256-Vergleich entfernt.</p>
+        <p class="dry-run-note">Die Vorschau verändert noch nichts. Erst „Dateien verschieben“ startet die journalisierte Übertragung. Die Quelle wird erst nach vollständiger Kopie und erfolgreichem SHA-256-Vergleich entfernt.</p>
       ` : `<p class="dry-run-note">Konflikte müssen vor der Ausführung behoben werden.</p>`}
     `;
     if (plan.executable) {
       const consent = $("#execution-consent");
       const execute = $("#execute-plan");
-      consent.addEventListener("change", () => { execute.disabled = !consent.checked; });
+      consent.addEventListener("change", () => {
+        execute.disabled = !consent.checked;
+        $("#execution-status").textContent = consent.checked ? `${plan.operations.length} Operationen sind zum Verschieben freigegeben.` : "Nach Aktivierung der Checkbox wird das Verschieben freigegeben.";
+      });
       execute.addEventListener("click", executePlan);
     }
   } catch (error) {
@@ -745,13 +749,17 @@ function operationRow(operation) {
 }
 
 async function executePlan() {
-  const target = $("#target").value.trim();
+  const target = state.lastPlan?.targetRoot || "";
   const count = state.lastPlan?.operations.length || 0;
   if (!count) return toast("Bitte zuerst einen ausführbaren Plan erstellen.", true);
-  if (!window.confirm(`${count} Datei${count === 1 ? "" : "en"} jetzt in den Zielordner verschieben?`)) return;
   const button = $("#execute-plan");
+  const status = $("#execution-status");
+  if (!button || button.disabled) return;
   button.disabled = true;
-  button.textContent = "Import läuft …";
+  button.textContent = "Dateien werden verschoben …";
+  status.textContent = `Übertragung gestartet: 0 von ${count} Operationen abgeschlossen. Bitte die App geöffnet lassen.`;
+  status.className = "execution-status running";
+  await new Promise((resolve) => requestAnimationFrame(() => resolve()));
   try {
     const result = await api().ExecutePlan(target, state.lastPlanOptions || planOptions());
     state.lastExecution = result;
@@ -759,18 +767,20 @@ async function executePlan() {
     if (result.status === "completed") {
       state.proposals.filter((item) => item.status === "confirmed").forEach((item) => { item.status = "imported"; });
       renderList();
-      toast("Import erfolgreich abgeschlossen.");
+      toast("Dateien wurden erfolgreich verschoben.");
     } else {
       if (result.completed > 0) {
         state.proposals.filter((item) => item.status === "confirmed").forEach((item) => { item.status = "error"; });
         renderList();
       }
-      toast(result.error || "Der Import wurde nicht vollständig abgeschlossen.", true);
+      toast(result.error || "Das Verschieben wurde nicht vollständig abgeschlossen.", true);
     }
   } catch (error) {
     toast(String(error), true);
     button.disabled = false;
-    button.textContent = "Import ausführen";
+    button.textContent = "Erneut versuchen";
+    status.textContent = `Verschieben nicht gestartet oder unterbrochen: ${String(error)}`;
+    status.className = "execution-status error";
   }
 }
 
@@ -781,13 +791,13 @@ function renderExecutionResult(result) {
   const canUndo = !undone && result.completed > 0 && result.journalId;
   output.innerHTML = `
     <div class="plan-summary ${successful || undone ? "ready" : "blocked"}">
-      <strong>${successful ? "Import abgeschlossen" : undone ? "Import rückgängig gemacht" : "Import unterbrochen"}</strong>
+      <strong>${successful ? "Dateien verschoben" : undone ? "Verschieben rückgängig gemacht" : "Verschieben unterbrochen"}</strong>
       <span>${result.completed} von ${result.total} Operationen · ${formatBytes(result.totalBytes)}</span>
     </div>
     ${result.error ? `<div class="warning-list">${escapeHTML(result.error)}</div>` : ""}
     ${result.warnings?.length ? `<div class="notice execution-notice">${result.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
     <p class="journal-id">Journal: ${escapeHTML(result.journalId)}</p>
-    ${canUndo ? `<div class="undo-box"><span>Undo ist möglich, solange keine Zieldatei verändert wurde.</span><button class="ghost danger" id="undo-execution">Import rückgängig machen</button></div>` : ""}
+    ${canUndo ? `<div class="undo-box"><span>Undo ist möglich, solange keine Zieldatei verändert wurde.</span><button type="button" class="ghost danger" id="undo-execution">Verschieben rückgängig machen</button></div>` : ""}
   `;
   $("#undo-execution")?.addEventListener("click", undoExecution);
 }
@@ -795,10 +805,9 @@ function renderExecutionResult(result) {
 async function undoExecution() {
   const result = state.lastExecution;
   if (!result?.journalId) return;
-  if (!window.confirm("Alle unveränderten Dateien dieses Imports an ihren ursprünglichen Ort zurückverschieben?")) return;
   const button = $("#undo-execution");
   button.disabled = true;
-  button.textContent = "Undo läuft …";
+  button.textContent = "Dateien werden zurückverschoben …";
   try {
     const undone = await api().UndoExecution(result.journalId);
     state.lastExecution = undone;
@@ -806,14 +815,14 @@ async function undoExecution() {
     if (undone.status === "undone") {
       state.proposals.filter((item) => item.status === "imported" || item.status === "error").forEach((item) => { item.status = "confirmed"; });
       renderList();
-      toast("Import wurde rückgängig gemacht.");
+      toast("Das Verschieben wurde rückgängig gemacht.");
     } else {
       toast(undone.error || "Undo konnte nicht abgeschlossen werden.", true);
     }
   } catch (error) {
     toast(String(error), true);
     button.disabled = false;
-    button.textContent = "Import rückgängig machen";
+    button.textContent = "Verschieben rückgängig machen";
   }
 }
 

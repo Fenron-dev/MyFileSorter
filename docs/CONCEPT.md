@@ -82,6 +82,7 @@ Umgesetzt sind Profile für Ollama, LM Studio, OpenAI, OpenRouter, Groq und benu
 ## Sichere Ausführung
 
 - Dry Run ist der Standard.
+- Nach der geprüften Vorschau ist die sichtbare Checkbox die ausdrückliche Ausführungsfreigabe; der Verschiebe-Button verwendet exakt den Zielpfad und die Optionen dieser Vorschau.
 - Die Datei wird unabhängig vom Dateisystem zunächst temporär kopiert.
 - Quelle und Kopie werden per SHA-256 verglichen, die Kopie atomar finalisiert und erst danach die Quelle entfernt.
 - Jede Operation wird journalisiert.

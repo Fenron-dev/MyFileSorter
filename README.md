@@ -30,7 +30,7 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten
 - GitHub-Actions-Builds für macOS, Linux und Windows
 
-Dateien werden erst nach Bestätigung des Zielplans verschoben. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online- und AI-Anfragen finden ausschließlich nach einer bewussten Auswahl durch den Nutzer statt.
+Dateien werden erst nach Bestätigung des Zielplans und Aktivierung der Verschiebe-Checkbox übertragen. Der anschließende Button „Dateien verschieben“ startet den Vorgang direkt in der App, ohne einen möglicherweise unsichtbaren Systemdialog. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online- und AI-Anfragen finden ausschließlich nach einer bewussten Auswahl durch den Nutzer statt.
 
 AI-Profile liegen im Benutzer-Konfigurationsordner. API-Schlüssel werden mit einem separat erzeugten lokalen AES-GCM-Tresorschlüssel verschlüsselt und weder an das Frontend zurückgegeben noch protokolliert. Für Ollama und LM Studio ist üblicherweise kein Schlüssel erforderlich.
 

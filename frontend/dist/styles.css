@@ -156,9 +156,12 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .operation-category { width: max-content; padding: 3px 6px; border-radius: 10px; color: #536b62; background: #e5ece8; font-size: 8px; font-style: normal; font-weight: 900; text-transform: uppercase; }
 .operation-category.ebook { color: #24577d; background: #dcebf5; }
 .operation-category.sidecar { color: #80502d; background: #f4dfcc; }
-.execution-box { margin-top: 14px; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; border: 1px solid #c8d5ce; border-radius: 10px; background: #f4f8f5; }
+.execution-box { margin-top: 14px; padding: 16px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 20px; border: 1px solid #c8d5ce; border-radius: 10px; background: #f4f8f5; }
 .execution-box label { display: flex; align-items: center; gap: 10px; color: #4d5c56; font-size: 12px; line-height: 1.45; }
 .execution-box input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: #204e43; }
+.execution-status { grid-column: 1 / -1; margin: 0; color: #77827d; font-size: 9px; }
+.execution-status.running { color: #2f6953; font-weight: 700; }
+.execution-status.error { color: #91473f; font-weight: 700; }
 .execution-notice { margin-top: 12px; }
 .journal-id { color: #8b857b; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
 .undo-box { padding: 14px 0; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #69736e; font-size: 11px; }
