@@ -229,6 +229,15 @@ func (a *App) UndoExecution(journalID string) (domain.ExecutionResult, error) {
 	return result, err
 }
 
+func (a *App) GetImportHistory() ([]domain.ImportRun, error) {
+	history, err := a.executor.History()
+	if err != nil {
+		a.logger.Error("history", "Importverlauf konnte nicht geladen werden", map[string]string{"error": err.Error()})
+		return nil, err
+	}
+	return history, nil
+}
+
 func (a *App) SearchOnline(id, provider, region string) ([]domain.MetadataCandidate, error) {
 	a.logger.Info("online", "Onlineabgleich gestartet", map[string]string{"proposalId": id, "provider": provider, "region": region})
 	a.mu.RLock()

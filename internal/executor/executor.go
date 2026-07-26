@@ -620,3 +620,32 @@ func (s *Service) Journals() ([]Journal, error) {
 	sort.Slice(result, func(left, right int) bool { return result[left].CreatedAt.After(result[right].CreatedAt) })
 	return result, nil
 }
+
+func (s *Service) History() ([]domain.ImportRun, error) {
+	journals, err := s.Journals()
+	if err != nil {
+		return nil, err
+	}
+	history := make([]domain.ImportRun, 0, len(journals))
+	for _, journal := range journals {
+		run := domain.ImportRun{
+			JournalID: journal.ID, Status: journal.Status, TargetRoot: journal.TargetRoot,
+			CreatedAt: journal.CreatedAt, UpdatedAt: journal.UpdatedAt, Total: len(journal.Operations),
+			Error: journal.Error,
+		}
+		for _, operation := range journal.Operations {
+			run.TotalBytes += operation.Size
+			if operation.Status == "completed" {
+				run.Completed++
+				run.CanUndo = true
+			} else if operation.Status == "transferring" {
+				run.CanUndo = true
+			}
+		}
+		if journal.Status == "undone" {
+			run.CanUndo = false
+		}
+		history = append(history, run)
+	}
+	return history, nil
+}

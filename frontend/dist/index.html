@@ -16,6 +16,7 @@
           <h1>MyFileSorter</h1>
         </div>
         <div class="topbar-actions">
+          <button class="log-button" id="open-history"><span>↺</span> Importverlauf</button>
           <button class="log-button" id="open-ai-profiles"><span>✦</span> AI-Profile</button>
           <button class="log-button" id="open-log"><span>≡</span> Sitzungslog</button>
         </div>
@@ -116,6 +117,15 @@
           <div id="plan-output"></div>
         </section>
       </main>
+    </div>
+    <div class="log-overlay hidden" id="history-overlay" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <section class="log-dialog history-dialog">
+        <header>
+          <div><p class="eyebrow">JOURNALISIERTE DATEIOPERATIONEN</p><h2 id="history-title">Importverlauf</h2></div>
+          <div class="log-header-actions"><button class="ghost" id="refresh-history">Aktualisieren</button><button class="panel-close" id="close-history" aria-label="Schließen">×</button></div>
+        </header>
+        <div id="history-content" class="history-content"></div>
+      </section>
     </div>
     <div class="log-overlay hidden" id="log-overlay" role="dialog" aria-modal="true" aria-labelledby="log-title">
       <section class="log-dialog">

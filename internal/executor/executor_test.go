@@ -194,6 +194,38 @@ func TestExecuteReportsCompletedOperationsAndBytes(t *testing.T) {
 	}
 }
 
+func TestHistorySurvivesServiceRestartAndTracksUndo(t *testing.T) {
+	root := t.TempDir()
+	journalDirectory := filepath.Join(root, "journals")
+	source := filepath.Join(root, "source", "book.m4b")
+	target := filepath.Join(root, "library", "book.m4b")
+	writeTestFile(t, source, "audio")
+	service := New(journalDirectory)
+	result, err := service.Execute(context.Background(), domain.OperationPlan{
+		Executable: true, TargetRoot: filepath.Join(root, "library"),
+		Operations: []domain.PlannedOperation{{Source: source, Target: target, Size: 5}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	restarted := New(journalDirectory)
+	history, err := restarted.History()
+	if err != nil || len(history) != 1 {
+		t.Fatalf("unexpected history: %#v, %v", history, err)
+	}
+	if history[0].JournalID != result.JournalID || history[0].Status != "completed" || history[0].Completed != 1 || !history[0].CanUndo {
+		t.Fatalf("unexpected completed run: %#v", history[0])
+	}
+	if _, err := restarted.Undo(context.Background(), result.JournalID); err != nil {
+		t.Fatal(err)
+	}
+	history, err = restarted.History()
+	if err != nil || history[0].Status != "undone" || history[0].CanUndo {
+		t.Fatalf("unexpected undone history: %#v, %v", history, err)
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

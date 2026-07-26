@@ -64,6 +64,11 @@ const previewCandidates = {
 };
 
 const previewAIProfiles = [{ id: "preview-ollama", name: "Lokales Ollama", provider: "ollama", baseUrl: "http://127.0.0.1:11434", model: "qwen3:8b", hasApiKey: false, isDefault: true }];
+const previewImportHistory = [{
+  journalId: "browser-preview-journal", status: "completed", targetRoot: "/Vorschau/Audiobookshelf",
+  createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), completed: 3, total: 3,
+  totalBytes: 1418723328, error: "", canUndo: true,
+}];
 
 const browserPreviewAPI = {
   async SelectDirectory(title) {
@@ -150,12 +155,20 @@ const browserPreviewAPI = {
     };
   },
   async UndoExecution(journalId) {
+    const run = previewImportHistory.find((item) => item.journalId === journalId);
+    if (run) {
+      run.status = "undone";
+      run.completed = 0;
+      run.canUndo = false;
+      run.updatedAt = new Date().toISOString();
+    }
     return {
       journalId, status: "undone", completed: 0,
       total: state.lastPlan?.operations.length || 0, totalBytes: 0,
       warnings: ["Browser-Vorschau: Es wurden keine Dateien verändert."],
     };
   },
+  async GetImportHistory() { return structuredClone(previewImportHistory); },
   async GetSessionLog() {
     return {
       sessionId: "browser-preview",
@@ -364,6 +377,63 @@ function logEntry(entry) {
       ${details.length ? `<dl>${details.map(([key, value]) => `<div><dt>${escapeHTML(key)}</dt><dd>${escapeHTML(value)}</dd></div>`).join("")}</dl>` : ""}
     </article>
   `;
+}
+
+async function showImportHistory() {
+  const overlay = $("#history-overlay");
+  const content = $("#history-content");
+  overlay.classList.remove("hidden");
+  content.innerHTML = `<div class="online-loading"><span></span>Importverlauf wird geladen …</div>`;
+  try {
+    const history = await api().GetImportHistory();
+    content.innerHTML = history?.length
+      ? `<div class="history-list">${history.map(importRunCard).join("")}</div>`
+      : `<div class="no-candidates">Noch keine ausgeführten Importe vorhanden.</div>`;
+    content.querySelectorAll("[data-undo-journal]").forEach((button) => {
+      button.addEventListener("click", () => undoHistoryRun(button.dataset.undoJournal, button));
+    });
+  } catch (error) {
+    content.innerHTML = `<div class="online-error"><strong>Importverlauf konnte nicht geladen werden</strong><p>${escapeHTML(String(error))}</p></div>`;
+  }
+}
+
+function importRunCard(run) {
+  const timestamp = new Date(run.createdAt).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+  const labels = {
+    completed: "Abgeschlossen", failed: "Fehlgeschlagen", undone: "Rückgängig gemacht",
+    undo_failed: "Undo fehlgeschlagen", running: "Unterbrochen", undoing: "Undo unterbrochen",
+  };
+  const status = labels[run.status] || run.status;
+  return `
+    <article class="history-run ${escapeHTML(run.status)}">
+      <div class="history-run-head"><time>${escapeHTML(timestamp)}</time><span>${escapeHTML(status)}</span></div>
+      <strong title="${escapeHTML(run.targetRoot)}">${escapeHTML(run.targetRoot || "Unbekanntes Ziel")}</strong>
+      <p>${run.completed} von ${run.total} Operationen · ${formatBytes(run.totalBytes)}</p>
+      ${run.error ? `<div class="history-error">${escapeHTML(run.error)}</div>` : ""}
+      <div class="history-run-foot"><code>${escapeHTML(run.journalId)}</code>${run.canUndo ? `<button type="button" class="ghost danger" data-undo-journal="${escapeHTML(run.journalId)}">Rückgängig machen</button>` : ""}</div>
+    </article>`;
+}
+
+async function undoHistoryRun(journalId, button) {
+  button.disabled = true;
+  button.textContent = "Wird rückgängig gemacht …";
+  try {
+    const result = await api().UndoExecution(journalId);
+    if (result.status === "undone") {
+      if (state.lastExecution?.journalId === journalId) state.lastExecution = result;
+      state.proposals.filter((item) => item.status === "imported" || item.status === "error").forEach((item) => { item.status = "confirmed"; });
+      renderList();
+      toast("Der Import wurde rückgängig gemacht.");
+      await showImportHistory();
+    } else {
+      toast(result.error || "Undo konnte nicht abgeschlossen werden.", true);
+      await showImportHistory();
+    }
+  } catch (error) {
+    toast(String(error), true);
+    button.disabled = false;
+    button.textContent = "Rückgängig machen";
+  }
 }
 
 async function chooseDirectory(input, title) {
@@ -1039,6 +1109,7 @@ $("#choose-source").addEventListener("click", () => chooseDirectory($("#source")
 $("#choose-target").addEventListener("click", () => chooseDirectory($("#target"), "Zielordner auswählen"));
 $("#scan").addEventListener("click", scan);
 $("#build-plan").addEventListener("click", buildPlan);
+$("#open-history").addEventListener("click", showImportHistory);
 $("#open-log").addEventListener("click", showSessionLog);
 $("#open-ai-profiles").addEventListener("click", showAIProfiles);
 $("#close-ai-profiles").addEventListener("click", () => $("#ai-profile-overlay").classList.add("hidden"));
@@ -1052,6 +1123,8 @@ $("#ai-profile-provider").addEventListener("change", (event) => {
 });
 $("#refresh-log").addEventListener("click", showSessionLog);
 $("#close-log").addEventListener("click", () => $("#log-overlay").classList.add("hidden"));
+$("#refresh-history").addEventListener("click", showImportHistory);
+$("#close-history").addEventListener("click", () => $("#history-overlay").classList.add("hidden"));
 [$("#book-number-width"), $("#track-number-width"), $("#audio-file-naming"), $("#move-ebooks"), $("#cleanup-sidecars")].forEach((input) => {
   input.addEventListener("change", () => {
     savePreferences();
@@ -1092,11 +1165,15 @@ setupFileDrop();
 $("#log-overlay").addEventListener("click", (event) => {
   if (event.target === $("#log-overlay")) $("#log-overlay").classList.add("hidden");
 });
+$("#history-overlay").addEventListener("click", (event) => {
+  if (event.target === $("#history-overlay")) $("#history-overlay").classList.add("hidden");
+});
 $("#ai-profile-overlay").addEventListener("click", (event) => {
   if (event.target === $("#ai-profile-overlay")) $("#ai-profile-overlay").classList.add("hidden");
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
+    $("#history-overlay").classList.add("hidden");
     $("#log-overlay").classList.add("hidden");
     $("#ai-profile-overlay").classList.add("hidden");
   }

@@ -34,6 +34,8 @@ Die Checkbox eines Vorschlags bildet den Status `confirmed` direkt ab. Nur angeh
 
 Jeder App-Start erzeugt eine eigene JSONL-Logdatei im Benutzer-Konfigurationsordner. Das aktuelle Sitzungslog ist in der App einsehbar und enthält Zeit, Stufe, Komponente, Ereignis und ausgewählte strukturierte Details. Protokolliert werden insbesondere Scan, Reviewstatus, Onlineabgleich, Planung, Import, Undo, Fehler und die zugehörige Journal-ID. Audiodaten, Zugangsdaten und API-Geheimnisse werden nicht protokolliert.
 
+Unabhängig davon bildet die App aus den persistenten Ausführungsjournalen einen Importverlauf. Er zeigt frühere Läufe auch nach einem Neustart mit Ziel, Status und Umfang an. Ein Undo wird nur angeboten, wenn das Journal noch rückführbare Dateioperationen enthält.
+
 ## Metadatenquellen
 
 Lokale Quellen haben eine nachvollziehbare Priorität:

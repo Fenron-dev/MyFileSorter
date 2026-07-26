@@ -177,6 +177,21 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .log-dialog h2 { margin: 2px 0 0; font-family: Georgia, serif; font-size: 28px; font-weight: 500; }
 .log-header-actions { display: flex; align-items: center; gap: 12px; }
 .log-content { min-height: 0; padding: 18px 22px 24px; flex: 1; overflow: auto; }
+.history-content { min-height: 0; padding: 18px 22px 24px; flex: 1; overflow: auto; }
+.history-list { display: grid; gap: 10px; }
+.history-run { padding: 15px 16px; border: 1px solid #d9d4ca; border-left: 4px solid #4f816d; border-radius: 9px; background: #fffdfa; }
+.history-run.failed, .history-run.undo_failed { border-left-color: #a84e46; }
+.history-run.undone { border-left-color: #8a918d; opacity: .82; }
+.history-run-head, .history-run-foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.history-run-head { margin-bottom: 8px; color: #817b72; font-size: 9px; }
+.history-run-head span { padding: 3px 7px; border-radius: 999px; color: #32634f; background: #e0ede6; font-weight: 800; }
+.history-run.failed .history-run-head span, .history-run.undo_failed .history-run-head span { color: #843f37; background: #f3dfda; }
+.history-run > strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.history-run > p { margin: 6px 0 11px; color: #77736b; font-size: 10px; }
+.history-error { margin: 0 0 11px; padding: 9px 11px; color: #84433a; border-radius: 7px; background: #f8e8e3; font-size: 9px; line-height: 1.45; overflow-wrap: anywhere; }
+.history-run-foot { padding-top: 10px; border-top: 1px solid #e7e2d9; }
+.history-run-foot code { color: #8a857d; font-size: 8px; }
+.history-run-foot button { padding: 7px 10px; font-size: 9px; }
 .log-meta { margin-bottom: 14px; display: flex; justify-content: space-between; gap: 20px; color: #80796f; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 9px; }
 .log-meta span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .log-entries { display: grid; gap: 8px; }

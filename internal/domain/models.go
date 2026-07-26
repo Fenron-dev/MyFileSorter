@@ -151,6 +151,19 @@ type ExecutionProgress struct {
 	CurrentTarget  string `json:"currentTarget,omitempty"`
 }
 
+type ImportRun struct {
+	JournalID  string    `json:"journalId"`
+	Status     string    `json:"status"`
+	TargetRoot string    `json:"targetRoot"`
+	CreatedAt  time.Time `json:"createdAt"`
+	UpdatedAt  time.Time `json:"updatedAt"`
+	Completed  int       `json:"completed"`
+	Total      int       `json:"total"`
+	TotalBytes int64     `json:"totalBytes"`
+	Error      string    `json:"error,omitempty"`
+	CanUndo    bool      `json:"canUndo"`
+}
+
 type LogEntry struct {
 	Timestamp time.Time         `json:"timestamp"`
 	Level     string            `json:"level"`
