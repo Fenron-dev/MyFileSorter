@@ -8,6 +8,7 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - Auslesen eingebetteter Metadaten über ein optional vorhandenes `ffprobe`
 - lokale Vorschläge aus Dateinamen und Tags
 - ordnerbasierte Erkennung von Mustern wie `Autor - Serie 03 - Titel`
+- Banddarstellung als `01 - Titel` und separates Info-Feld für Hinweise wie `Ungekürzt`
 - sichtbarer aktueller Quellpfad pro Vorschlag
 - explizite Nutzerbestätigung pro Hörbuch
 - konfliktfreier Dry-Run-Operationsplan

@@ -105,8 +105,30 @@ func TestScanTreatsDirectoryEndingInMP3AsFolderEvidence(t *testing.T) {
 		t.Fatal(err)
 	}
 	proposal := result.Proposals[0]
-	if proposal.Metadata.Title != "Die Nullform 1" || proposal.Metadata.Author != "Dem Mikhailov" {
+	if proposal.Metadata.Title != "Die Nullform" || proposal.Metadata.Author != "Dem Mikhailov" {
 		t.Fatalf("unexpected folder inference: %#v", proposal.Metadata)
+	}
+	if proposal.Metadata.Series != "Die Nullform" || proposal.Metadata.SeriesSequence != "1" || proposal.Metadata.EditionInfo != "Ungekürzt" {
+		t.Fatalf("unexpected sequence or edition info: %#v", proposal.Metadata)
+	}
+}
+
+func TestScanNormalizesTrailingVolumeNumber(t *testing.T) {
+	root := t.TempDir()
+	bookDir := filepath.Join(root, "Dem.Mikhailov.-.Die.Nullform.05")
+	if err := os.Mkdir(bookDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bookDir, "01 - Opening Credits.mp3"), []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	result, err := New(nil).Scan(context.Background(), root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadata := result.Proposals[0].Metadata
+	if metadata.Title != "Die Nullform" || metadata.Series != "Die Nullform" || metadata.SeriesSequence != "05" {
+		t.Fatalf("unexpected numbered folder inference: %#v", metadata)
 	}
 }
 

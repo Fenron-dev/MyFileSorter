@@ -16,6 +16,7 @@ var numberChunk = regexp.MustCompile(`\d+|\D+`)
 var (
 	folderSeparators = regexp.MustCompile(`[._]+`)
 	releaseMarker    = regexp.MustCompile(`(?i)\s*(?:\(|\[|,)?\s*(?:ungekürzt|ungekuerzt|abook|audiobook)\s*(?:\)|\]|,)?\s*`)
+	editionMarker    = regexp.MustCompile(`(?i)[(\[]\s*(ungekürzt|ungekuerzt|gekürzt|gekuerzt|unabridged|abridged)\s*[)\]]`)
 	trailingSequence = regexp.MustCompile(`(?i)^(.*?)\s+(?:band|teil)?\s*(\d+(?:[.,]\d+)?)$`)
 )
 
@@ -24,6 +25,7 @@ type folderMetadata struct {
 	Author         string
 	Series         string
 	SeriesSequence string
+	EditionInfo    string
 }
 
 func proposalID(paths []string) string {
@@ -66,7 +68,8 @@ func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folde
 	if samePath(groupPath, root) || (len(files) == 1 && samePath(groupPath, files[0].Path)) {
 		return folderMetadata{}
 	}
-	name := cleanFolderName(filepath.Base(groupPath))
+	rawName := filepath.Base(groupPath)
+	name := cleanFolderName(rawName)
 	if name == "" {
 		return folderMetadata{}
 	}
@@ -74,10 +77,15 @@ func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folde
 	for index := range parts {
 		parts[index] = strings.TrimSpace(parts[index])
 	}
-	result := folderMetadata{Title: name}
+	result := folderMetadata{Title: name, EditionInfo: extractEditionInfo(rawName)}
 	if len(parts) >= 2 {
 		result.Author = parts[0]
 		result.Title = strings.Join(parts[1:], " - ")
+		if match := trailingSequence.FindStringSubmatch(result.Title); len(match) == 3 {
+			result.Title = strings.TrimSpace(match[1])
+			result.Series = result.Title
+			result.SeriesSequence = strings.ReplaceAll(match[2], ",", ".")
+		}
 	}
 	if len(parts) >= 3 {
 		if match := trailingSequence.FindStringSubmatch(parts[1]); len(match) == 3 {
@@ -87,6 +95,22 @@ func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folde
 		}
 	}
 	return result
+}
+
+func extractEditionInfo(value string) string {
+	match := editionMarker.FindStringSubmatch(value)
+	if len(match) != 2 {
+		return ""
+	}
+	value = strings.ToLower(match[1])
+	switch value {
+	case "ungekürzt", "ungekuerzt", "unabridged":
+		return "Ungekürzt"
+	case "gekürzt", "gekuerzt", "abridged":
+		return "Gekürzt"
+	default:
+		return ""
+	}
 }
 
 func cleanFolderName(value string) string {

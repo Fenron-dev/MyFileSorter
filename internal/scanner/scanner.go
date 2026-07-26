@@ -180,6 +180,10 @@ func (s *Scanner) buildProposal(ctx context.Context, root, groupPath string, pat
 	proposal.Metadata.Author, proposal.Metadata.Evidence["author"] = inferAuthor(files, folder)
 	proposal.Metadata.Series, proposal.Metadata.Evidence["series"] = inferField(files, "series")
 	proposal.Metadata.SeriesSequence, proposal.Metadata.Evidence["seriesSequence"] = inferField(files, "seriesSequence")
+	if folder.EditionInfo != "" {
+		proposal.Metadata.EditionInfo = folder.EditionInfo
+		proposal.Metadata.Evidence["editionInfo"] = domain.Evidence{Value: folder.EditionInfo, Source: "folder", Confidence: .75}
+	}
 	proposal.Metadata.Narrator, proposal.Metadata.Evidence["narrator"] = inferField(files, "narrator")
 	proposal.Metadata.Language, proposal.Metadata.Evidence["language"] = inferField(files, "language")
 	proposal.Metadata.ASIN, proposal.Metadata.Evidence["asin"] = inferField(files, "asin")

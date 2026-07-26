@@ -24,6 +24,7 @@ type BookMetadata struct {
 	Author         string              `json:"author"`
 	Series         string              `json:"series,omitempty"`
 	SeriesSequence string              `json:"seriesSequence,omitempty"`
+	EditionInfo    string              `json:"editionInfo,omitempty"`
 	Narrator       string              `json:"narrator,omitempty"`
 	Language       string              `json:"language,omitempty"`
 	ASIN           string              `json:"asin,omitempty"`

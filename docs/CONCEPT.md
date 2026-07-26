@@ -11,13 +11,14 @@ MyFileSorter arbeitet standardmäßig vollständig lokal. Ein Scan löst weder N
 3. Dateien konservativ zu Hörbüchern gruppieren.
 4. Den Hörbuchordner gegenüber generischen Tracknamen wie „Opening Credits“ oder „Kapitel 1“ priorisieren.
 5. Strukturierte Ordnernamen wie `Autor - Serie 03 - Titel` lokal zerlegen.
-6. Einen lokalen Metadatenvorschlag mit Herkunft, Quellpfad und Konfidenz erzeugen.
-7. Den Vorschlag durch den Nutzer bestätigen oder bearbeiten lassen.
-8. Bei Bedarf Audible/Google Books manuell abfragen.
-9. Bei Bedarf später AI zur strukturierten Erkennung und Suchanfragebildung verwenden.
-10. Nur bestätigte Vorschläge in den Operationsplan aufnehmen.
-11. Vor der Ausführung Quelle, Ziel und Kollisionen erneut prüfen.
-12. Nach ausdrücklicher Bestätigung journalisiert kopieren, per SHA-256 prüfen und erst dann die Quelle entfernen.
+6. Nachgestellte Bandnummern in die Serien-/Bandfelder verschieben und Editionshinweise wie „Ungekürzt“ separat halten.
+7. Einen lokalen Metadatenvorschlag mit Herkunft, Quellpfad und Konfidenz erzeugen.
+8. Den Vorschlag durch den Nutzer bestätigen oder bearbeiten lassen.
+9. Bei Bedarf Audible/Google Books manuell abfragen.
+10. Bei Bedarf später AI zur strukturierten Erkennung und Suchanfragebildung verwenden.
+11. Nur bestätigte Vorschläge in den Operationsplan aufnehmen.
+12. Vor der Ausführung Quelle, Ziel und Kollisionen erneut prüfen.
+13. Nach ausdrücklicher Bestätigung journalisiert kopieren, per SHA-256 prüfen und erst dann die Quelle entfernen.
 
 ## Statusmodell
 

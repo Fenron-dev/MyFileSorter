@@ -15,6 +15,7 @@ const previewProposal = {
     author: "Patrick Rothfuss",
     series: "Die Königsmörder-Chronik",
     seriesSequence: "1",
+    editionInfo: "Ungekürzt",
     narrator: "Stefan Kaminski",
     language: "de",
     asin: "B004V0Q9ZA",
@@ -24,6 +25,7 @@ const previewProposal = {
       author: { value: "Patrick Rothfuss", source: "album_artist_tag", confidence: 0.96 },
       series: { value: "Die Königsmörder-Chronik", source: "series_tag", confidence: 0.88 },
       seriesSequence: { value: "1", source: "series_part_tag", confidence: 0.91 },
+      editionInfo: { value: "Ungekürzt", source: "folder", confidence: 0.75 },
       narrator: { value: "Stefan Kaminski", source: "narrator_tag", confidence: 0.9 },
       language: { value: "de", source: "language_tag", confidence: 0.95 },
       asin: { value: "B004V0Q9ZA", source: "asin_tag", confidence: 0.99 },
@@ -168,6 +170,21 @@ function statusLabel(status) {
   }[status] || status;
 }
 
+function formattedSequence(value) {
+  const text = String(value || "").trim().replace(",", ".");
+  if (!text) return "";
+  const [whole, fraction] = text.split(".", 2);
+  const numeric = Number.parseInt(whole, 10);
+  if (!Number.isFinite(numeric)) return text;
+  const cleanedFraction = fraction?.replace(/0+$/, "") || "";
+  return `${String(numeric).padStart(2, "0")}${cleanedFraction ? `.${cleanedFraction}` : ""}`;
+}
+
+function displayBookTitle(proposal) {
+  const sequence = formattedSequence(proposal.metadata.seriesSequence);
+  return sequence ? `${sequence} - ${proposal.metadata.title}` : proposal.metadata.title;
+}
+
 function displaySourcePath(proposal) {
   const root = String(proposal.sourceRoot || "").replaceAll("\\", "/").replace(/\/+$/, "");
   const group = String(proposal.groupPath || "").replaceAll("\\", "/");
@@ -248,7 +265,7 @@ function renderList() {
     <button class="book-item ${proposal.id === state.selectedId ? "active" : ""}" data-id="${proposal.id}">
       <span class="status-dot ${proposal.status}"></span>
       <span class="book-copy">
-        <strong>${escapeHTML(proposal.metadata.title)}</strong>
+        <strong>${escapeHTML(displayBookTitle(proposal))}</strong>
         <small>${escapeHTML(proposal.metadata.author)} · ${proposal.files.length} Datei${proposal.files.length === 1 ? "" : "en"}</small>
         <small class="source-path" title="${escapeHTML(proposal.groupPath)}">${escapeHTML(displaySourcePath(proposal))}</small>
       </span>
@@ -283,7 +300,7 @@ function renderDetail() {
     <div class="detail-header">
       <div>
         <p class="detail-kicker">LOKALER VORSCHLAG · ${Math.round(proposal.confidence * 100)} %</p>
-        <h3>${escapeHTML(m.title)}</h3>
+        <h3>${escapeHTML(displayBookTitle(proposal))}</h3>
         <p>${escapeHTML(m.author)}</p>
       </div>
       <span class="status-pill ${proposal.status}">${statusLabel(proposal.status)}</span>
@@ -298,6 +315,7 @@ function renderDetail() {
       ${field("Autor", "author", m.author, evidence(m, "author"), true)}
       ${field("Serie", "series", m.series, evidence(m, "series"))}
       ${field("Band", "seriesSequence", m.seriesSequence, evidence(m, "seriesSequence"))}
+      ${field("Info", "editionInfo", m.editionInfo, evidence(m, "editionInfo"))}
       ${field("Sprecher", "narrator", m.narrator, evidence(m, "narrator"))}
       ${field("Sprache", "language", m.language, evidence(m, "language"))}
       ${field("ASIN", "asin", m.asin, evidence(m, "asin"))}
@@ -424,7 +442,8 @@ function formMetadata(previous) {
   const data = new FormData($("#metadata-form"));
   return {
     title: data.get("title"), author: data.get("author"), series: data.get("series"),
-    seriesSequence: data.get("seriesSequence"), narrator: data.get("narrator"), language: data.get("language"),
+    seriesSequence: data.get("seriesSequence"), editionInfo: data.get("editionInfo"),
+    narrator: data.get("narrator"), language: data.get("language"),
     asin: data.get("asin"), isbn: data.get("isbn"), evidence: previous.evidence || {},
   };
 }

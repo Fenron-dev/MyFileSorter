@@ -73,6 +73,7 @@ func (a *App) UpdateProposal(id string, update domain.BookMetadata) (domain.Book
 	update.Author = strings.TrimSpace(update.Author)
 	update.Series = strings.TrimSpace(update.Series)
 	update.SeriesSequence = strings.TrimSpace(update.SeriesSequence)
+	update.EditionInfo = strings.TrimSpace(update.EditionInfo)
 	if update.Title == "" || update.Author == "" {
 		return domain.BookProposal{}, fmt.Errorf("Titel und Autor sind erforderlich")
 	}
@@ -231,6 +232,7 @@ func markManualChanges(before domain.BookMetadata, after *domain.BookMetadata) {
 		{"author", before.Author, after.Author},
 		{"series", before.Series, after.Series},
 		{"seriesSequence", before.SeriesSequence, after.SeriesSequence},
+		{"editionInfo", before.EditionInfo, after.EditionInfo},
 		{"narrator", before.Narrator, after.Narrator},
 		{"language", before.Language, after.Language},
 		{"asin", before.ASIN, after.ASIN},
