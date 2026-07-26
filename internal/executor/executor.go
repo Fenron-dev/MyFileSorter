@@ -57,6 +57,13 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 	if !plan.Executable || len(plan.Operations) == 0 {
 		return domain.ExecutionResult{}, fmt.Errorf("der Operationsplan ist nicht ausführbar")
 	}
+	validatedPlan, preflightWarnings, err := preflightSources(plan)
+	if err != nil {
+		return domain.ExecutionResult{
+			Status: "failed", Total: len(plan.Operations), Error: err.Error(), Warnings: preflightWarnings,
+		}, err
+	}
+	plan = validatedPlan
 	journal, err := s.newJournal(plan)
 	if err != nil {
 		return domain.ExecutionResult{}, err
@@ -71,7 +78,7 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 		op.UpdatedAt = s.now()
 		journal.UpdatedAt = s.now()
 		if err := s.save(journal); err != nil {
-			return resultFromJournal(journal), fmt.Errorf("Journal vorbereiten: %w", err)
+			return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("Journal vorbereiten: %w", err)
 		}
 		checksum, size, moveErr := transfer(ctx, op.Source, op.Target, op.Size)
 		if moveErr != nil {
@@ -81,9 +88,9 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 			journal.Error = moveErr.Error()
 			journal.UpdatedAt = s.now()
 			if saveErr := s.save(journal); saveErr != nil {
-				return resultFromJournal(journal), fmt.Errorf("%v; Journal aktualisieren: %w", moveErr, saveErr)
+				return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("%v; Journal aktualisieren: %w", moveErr, saveErr)
 			}
-			return resultFromJournal(journal), moveErr
+			return withWarnings(resultFromJournal(journal), preflightWarnings), moveErr
 		}
 		op.SHA256 = checksum
 		op.Size = size
@@ -91,16 +98,111 @@ func (s *Service) Execute(ctx context.Context, plan domain.OperationPlan) (domai
 		op.UpdatedAt = s.now()
 		journal.UpdatedAt = s.now()
 		if err := s.save(journal); err != nil {
-			return resultFromJournal(journal), fmt.Errorf("Journal aktualisieren: %w", err)
+			return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("Journal aktualisieren: %w", err)
 		}
 	}
 
 	journal.Status = "completed"
 	journal.UpdatedAt = s.now()
 	if err := s.save(journal); err != nil {
-		return resultFromJournal(journal), fmt.Errorf("Journal abschließen: %w", err)
+		return withWarnings(resultFromJournal(journal), preflightWarnings), fmt.Errorf("Journal abschließen: %w", err)
 	}
-	return resultFromJournal(journal), nil
+	return withWarnings(resultFromJournal(journal), preflightWarnings), nil
+}
+
+func preflightSources(plan domain.OperationPlan) (domain.OperationPlan, []string, error) {
+	warnings := make([]string, 0)
+	for index := range plan.Operations {
+		operation := &plan.Operations[index]
+		resolved, info, recovered, err := resolveSource(operation.Source)
+		if err != nil {
+			return plan, warnings, fmt.Errorf("Quelle seit dem Scan nicht mehr erreichbar: %s: %w. Bitte den Quellordner neu scannen", operation.Source, err)
+		}
+		if !info.Mode().IsRegular() {
+			return plan, warnings, fmt.Errorf("Quelle ist keine reguläre Datei: %s", resolved)
+		}
+		if operation.Size > 0 && info.Size() != operation.Size {
+			return plan, warnings, fmt.Errorf("Quelldatei wurde seit dem Scan verändert: %s. Bitte den Quellordner neu scannen", resolved)
+		}
+		operation.Source = resolved
+		if recovered {
+			warnings = append(warnings, "Unicode-normalisierten Quellpfad wiederaufgelöst: "+resolved)
+		}
+	}
+	return plan, warnings, nil
+}
+
+func resolveSource(source string) (string, os.FileInfo, bool, error) {
+	info, err := os.Lstat(source)
+	if err == nil {
+		return source, info, false, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", nil, false, err
+	}
+	resolved, err := resolveEquivalentPath(source)
+	if err != nil {
+		return "", nil, false, err
+	}
+	info, err = os.Lstat(resolved)
+	if err != nil {
+		return "", nil, false, err
+	}
+	return resolved, info, resolved != source, nil
+}
+
+func resolveEquivalentPath(path string) (string, error) {
+	cleaned := filepath.Clean(path)
+	volume := filepath.VolumeName(cleaned)
+	root := volume + string(filepath.Separator)
+	if !filepath.IsAbs(cleaned) {
+		return "", fmt.Errorf("Quellpfad ist nicht absolut")
+	}
+	relative := strings.TrimPrefix(cleaned, root)
+	current := root
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		if component == "" {
+			continue
+		}
+		candidate := filepath.Join(current, component)
+		if _, err := os.Lstat(candidate); err == nil {
+			current = candidate
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", err
+		}
+		entries, err := os.ReadDir(current)
+		if err != nil {
+			return "", err
+		}
+		canonical := canonicalPathName(component)
+		matches := make([]string, 0, 1)
+		for _, entry := range entries {
+			if canonicalPathName(entry.Name()) == canonical {
+				matches = append(matches, entry.Name())
+			}
+		}
+		if len(matches) == 0 {
+			return "", os.ErrNotExist
+		}
+		if len(matches) > 1 {
+			return "", fmt.Errorf("mehrdeutige Unicode-Pfadvarianten für %q", component)
+		}
+		current = filepath.Join(current, matches[0])
+	}
+	return current, nil
+}
+
+func canonicalPathName(value string) string {
+	return strings.NewReplacer(
+		"a\u0308", "ä", "o\u0308", "ö", "u\u0308", "ü", "A\u0308", "Ä", "O\u0308", "Ö", "U\u0308", "Ü",
+		"e\u0301", "é", "e\u0300", "è", "a\u0301", "á", "a\u0300", "à", "c\u0327", "ç", "n\u0303", "ñ",
+	).Replace(value)
+}
+
+func withWarnings(result domain.ExecutionResult, warnings []string) domain.ExecutionResult {
+	result.Warnings = append(result.Warnings, warnings...)
+	return result
 }
 
 func (s *Service) Undo(ctx context.Context, journalID string) (domain.ExecutionResult, error) {

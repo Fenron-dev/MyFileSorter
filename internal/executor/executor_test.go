@@ -119,6 +119,52 @@ func TestCleanupMovesSidecarToUndoableQuarantine(t *testing.T) {
 	}
 }
 
+func TestExecutePreflightsEverySourceBeforeMovingAnything(t *testing.T) {
+	root := t.TempDir()
+	firstSource := filepath.Join(root, "source", "01.mp3")
+	missingSource := filepath.Join(root, "source", "02.mp3")
+	firstTarget := filepath.Join(root, "target", "01.mp3")
+	writeTestFile(t, firstSource, "first")
+	service := New(filepath.Join(root, "journals"))
+	plan := domain.OperationPlan{Executable: true, Operations: []domain.PlannedOperation{
+		{Source: firstSource, Target: firstTarget, Size: 5},
+		{Source: missingSource, Target: filepath.Join(root, "target", "02.mp3"), Size: 6},
+	}}
+
+	result, err := service.Execute(context.Background(), plan)
+	if err == nil || result.Completed != 0 || result.Status != "failed" {
+		t.Fatalf("expected preflight failure, got %#v, %v", result, err)
+	}
+	if data, readErr := os.ReadFile(firstSource); readErr != nil || string(data) != "first" {
+		t.Fatalf("first source changed before complete preflight: %q, %v", data, readErr)
+	}
+	if _, statErr := os.Stat(firstTarget); !os.IsNotExist(statErr) {
+		t.Fatalf("first target should not exist: %v", statErr)
+	}
+}
+
+func TestExecuteResolvesEquivalentUnicodeSourcePath(t *testing.T) {
+	root := t.TempDir()
+	actualDirectory := filepath.Join(root, "Ungeku\u0308rzt")
+	actualSource := filepath.Join(actualDirectory, "01 - Kapitel.mp3")
+	plannedSource := filepath.Join(root, "Ungekürzt", "01 - Kapitel.mp3")
+	target := filepath.Join(root, "target", "01 - Kapitel.mp3")
+	writeTestFile(t, actualSource, "audio")
+	service := New(filepath.Join(root, "journals"))
+	result, err := service.Execute(context.Background(), domain.OperationPlan{Executable: true, Operations: []domain.PlannedOperation{{
+		Source: plannedSource, Target: target, Size: 5,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Status != "completed" {
+		t.Fatalf("unexpected result: %#v", result)
+	}
+	if data, readErr := os.ReadFile(target); readErr != nil || string(data) != "audio" {
+		t.Fatalf("unicode-equivalent source was not moved: %q, %v", data, readErr)
+	}
+}
+
 func writeTestFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {

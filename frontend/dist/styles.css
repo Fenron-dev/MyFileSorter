@@ -162,7 +162,9 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .execution-status { grid-column: 1 / -1; margin: 0; color: #77827d; font-size: 9px; }
 .execution-status.running { color: #2f6953; font-weight: 700; }
 .execution-status.error { color: #91473f; font-weight: 700; }
+.rescan-inline { grid-column: 1 / -1; justify-self: start; }
 .execution-notice { margin-top: 12px; }
+.source-recovery { margin-top: 12px; padding: 13px 15px; display: flex; align-items: center; justify-content: space-between; gap: 16px; color: #775423; border: 1px solid #dfc99f; border-radius: 9px; background: #fff7df; font-size: 10px; }
 .journal-id { color: #8b857b; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 10px; }
 .undo-box { padding: 14px 0; display: flex; align-items: center; justify-content: space-between; gap: 20px; color: #69736e; font-size: 11px; }
 .toast { position: fixed; right: 24px; bottom: 24px; max-width: 430px; padding: 13px 17px; color: #fff; border-radius: 9px; background: #234f44; box-shadow: 0 12px 40px rgba(0,0,0,.2); font-size: 12px; z-index: 10; }

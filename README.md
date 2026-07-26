@@ -14,6 +14,7 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - Checkbox-Auswahl: Nur als fertig markierte Hörbücher gelangen in den Importplan
 - konfliktfreier Dry-Run-Operationsplan
 - ausdrücklich bestätigte, journalisierte Ausführung
+- vollständige Quellenprüfung vor der ersten Dateioperation, inklusive sicherer Auflösung äquivalenter Unicode-Pfadschreibweisen
 - SHA-256-Prüfung jeder Kopie, bevor die Quelldatei entfernt wird
 - Undo, solange die importierten Zieldateien unverändert sind
 - optionales Einsortieren von E-Books unter `# Ebooks/Autor/Serie oder Buch`
@@ -30,7 +31,7 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten
 - GitHub-Actions-Builds für macOS, Linux und Windows
 
-Dateien werden erst nach Bestätigung des Zielplans und Aktivierung der Verschiebe-Checkbox übertragen. Der anschließende Button „Dateien verschieben“ startet den Vorgang direkt in der App, ohne einen möglicherweise unsichtbaren Systemdialog. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online- und AI-Anfragen finden ausschließlich nach einer bewussten Auswahl durch den Nutzer statt.
+Dateien werden erst nach Bestätigung des Zielplans und Aktivierung der Verschiebe-Checkbox übertragen. Der anschließende Button „Dateien verschieben“ startet den Vorgang direkt in der App, ohne einen möglicherweise unsichtbaren Systemdialog. Vor der ersten Änderung prüft die App sämtliche Quelldateien erneut. Nicht mehr vorhandene oder seit dem Scan veränderte Quellen blockieren damit den gesamten Lauf und können direkt über „Quelle neu scannen“ aktualisiert werden. Dazu schreibt die App zunächst eine temporäre Zieldatei, vergleicht die SHA-256-Prüfsumme und entfernt erst danach die Quelle. Jeder Lauf wird im Benutzer-Konfigurationsordner journalisiert. Online- und AI-Anfragen finden ausschließlich nach einer bewussten Auswahl durch den Nutzer statt.
 
 AI-Profile liegen im Benutzer-Konfigurationsordner. API-Schlüssel werden mit einem separat erzeugten lokalen AES-GCM-Tresorschlüssel verschlüsselt und weder an das Frontend zurückgegeben noch protokolliert. Für Ollama und LM Studio ist üblicherweise kein Schlüssel erforderlich.
 

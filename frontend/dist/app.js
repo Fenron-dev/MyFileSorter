@@ -781,6 +781,7 @@ async function executePlan() {
     button.textContent = "Erneut versuchen";
     status.textContent = `Verschieben nicht gestartet oder unterbrochen: ${String(error)}`;
     status.className = "execution-status error";
+    if (isSourceError(error)) addRescanButton(status);
   }
 }
 
@@ -789,6 +790,7 @@ function renderExecutionResult(result) {
   const successful = result.status === "completed";
   const undone = result.status === "undone";
   const canUndo = !undone && result.completed > 0 && result.journalId;
+  const needsRescan = isSourceError(result.error);
   output.innerHTML = `
     <div class="plan-summary ${successful || undone ? "ready" : "blocked"}">
       <strong>${successful ? "Dateien verschoben" : undone ? "Verschieben rückgängig gemacht" : "Verschieben unterbrochen"}</strong>
@@ -796,10 +798,27 @@ function renderExecutionResult(result) {
     </div>
     ${result.error ? `<div class="warning-list">${escapeHTML(result.error)}</div>` : ""}
     ${result.warnings?.length ? `<div class="notice execution-notice">${result.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
+    ${needsRescan ? `<div class="source-recovery"><span>Die Quelle hat sich seit dem Scan geändert oder verwendet eine nicht mehr auflösbare Pfadschreibweise.</span><button type="button" class="secondary" id="rescan-source">Quelle neu scannen</button></div>` : ""}
     <p class="journal-id">Journal: ${escapeHTML(result.journalId)}</p>
     ${canUndo ? `<div class="undo-box"><span>Undo ist möglich, solange keine Zieldatei verändert wurde.</span><button type="button" class="ghost danger" id="undo-execution">Verschieben rückgängig machen</button></div>` : ""}
   `;
   $("#undo-execution")?.addEventListener("click", undoExecution);
+  $("#rescan-source")?.addEventListener("click", scan);
+}
+
+function isSourceError(error) {
+  const message = String(error || "").toLocaleLowerCase();
+  return message.includes("quelle") && (message.includes("nicht mehr") || message.includes("no such file") || message.includes("lstat") || message.includes("neu scannen"));
+}
+
+function addRescanButton(status) {
+  if (status.parentElement.querySelector(".rescan-inline")) return;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ghost rescan-inline";
+  button.textContent = "Quelle neu scannen";
+  button.addEventListener("click", scan);
+  status.after(button);
 }
 
 async function undoExecution() {
