@@ -36,8 +36,8 @@ func TestScanGroupsNestedTracksAndKeepsRootFilesSeparate(t *testing.T) {
 		}
 	}
 	reader := stubReader{values: map[string]domain.EmbeddedMetadata{
-		"track 1.m4b":   {Album: "Ein Buch", AlbumArtist: "Eine Autorin", Track: 1},
-		"track 2.m4b":   {Album: "Ein Buch", AlbumArtist: "Eine Autorin", Track: 2},
+		"track 1.m4b":    {Album: "Ein Buch", AlbumArtist: "Eine Autorin", Track: 1},
+		"track 2.m4b":    {Album: "Ein Buch", AlbumArtist: "Eine Autorin", Track: 2},
 		"standalone.m4b": {Title: "Einzelbuch", Artist: "Ein Autor"},
 	}}
 

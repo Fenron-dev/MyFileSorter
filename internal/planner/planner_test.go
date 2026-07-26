@@ -13,7 +13,7 @@ func TestBuildIncludesOnlyConfirmed(t *testing.T) {
 	confirmed := domain.BookProposal{
 		ID: "confirmed", SourceRoot: source, Status: domain.StatusConfirmed,
 		Metadata: domain.BookMetadata{Author: "Autor", Title: "Titel"},
-		Files: []domain.AudioFile{{Path: filepath.Join(source, "book.m4b"), Extension: ".m4b", Size: 42}},
+		Files:    []domain.AudioFile{{Path: filepath.Join(source, "book.m4b"), Extension: ".m4b", Size: 42}},
 	}
 	review := confirmed
 	review.ID = "review"
@@ -37,7 +37,7 @@ func TestBuildRejectsOverlappingRoots(t *testing.T) {
 	proposal := domain.BookProposal{
 		ID: "book", SourceRoot: source, Status: domain.StatusConfirmed,
 		Metadata: domain.BookMetadata{Author: "Autor", Title: "Titel"},
-		Files: []domain.AudioFile{{Path: filepath.Join(source, "book.m4b"), Extension: ".m4b"}},
+		Files:    []domain.AudioFile{{Path: filepath.Join(source, "book.m4b"), Extension: ".m4b"}},
 	}
 	if _, err := Build(target, []domain.BookProposal{proposal}); err == nil {
 		t.Fatal("expected overlapping roots error")
