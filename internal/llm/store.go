@@ -18,17 +18,17 @@ import (
 )
 
 type profileRecord struct {
-	Profile       domain.AIProfile `json:"profile"`
+	Profile      domain.AIProfile `json:"profile"`
 	EncryptedKey string           `json:"encryptedKey,omitempty"`
 }
 
 type Store struct {
-	mu       sync.RWMutex
+	mu        sync.RWMutex
 	directory string
-	filePath string
-	keyPath  string
-	records  map[string]profileRecord
-	initErr  error
+	filePath  string
+	keyPath   string
+	records   map[string]profileRecord
+	initErr   error
 }
 
 func NewStore(directory string) *Store {

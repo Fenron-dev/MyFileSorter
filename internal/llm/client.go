@@ -200,9 +200,9 @@ func analysisPrompt(proposal domain.BookProposal) (string, error) {
 		fileNames = append(fileNames, truncate(file.Name, 300))
 	}
 	input := struct {
-		FolderName    string              `json:"folderName"`
-		Current       domain.BookMetadata `json:"currentSuggestion"`
-		FileNames     []string            `json:"fileNames"`
+		FolderName    string                  `json:"folderName"`
+		Current       domain.BookMetadata     `json:"currentSuggestion"`
+		FileNames     []string                `json:"fileNames"`
 		EmbeddedFirst domain.EmbeddedMetadata `json:"embeddedMetadataFirstFile,omitempty"`
 	}{FolderName: filepath.Base(proposal.GroupPath), Current: proposal.Metadata, FileNames: fileNames}
 	input.Current.Evidence = nil

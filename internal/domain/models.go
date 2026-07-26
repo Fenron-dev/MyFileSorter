@@ -208,17 +208,17 @@ type AIProfileInput struct {
 }
 
 type AISuggestion struct {
-	ProposalID          string  `json:"proposalId"`
-	ProfileID           string  `json:"profileId"`
-	Title               string  `json:"title"`
-	Author              string  `json:"author"`
-	Series              string  `json:"series,omitempty"`
-	SeriesSequence      string  `json:"seriesSequence,omitempty"`
-	EditionInfo         string  `json:"editionInfo,omitempty"`
-	Narrator            string  `json:"narrator,omitempty"`
-	Language            string  `json:"language,omitempty"`
-	SuggestedSearchTitle string `json:"suggestedSearchTitle,omitempty"`
+	ProposalID            string  `json:"proposalId"`
+	ProfileID             string  `json:"profileId"`
+	Title                 string  `json:"title"`
+	Author                string  `json:"author"`
+	Series                string  `json:"series,omitempty"`
+	SeriesSequence        string  `json:"seriesSequence,omitempty"`
+	EditionInfo           string  `json:"editionInfo,omitempty"`
+	Narrator              string  `json:"narrator,omitempty"`
+	Language              string  `json:"language,omitempty"`
+	SuggestedSearchTitle  string  `json:"suggestedSearchTitle,omitempty"`
 	SuggestedSearchAuthor string `json:"suggestedSearchAuthor,omitempty"`
-	Confidence          float64 `json:"confidence"`
-	Reasoning           string  `json:"reasoning,omitempty"`
+	Confidence            float64 `json:"confidence"`
+	Reasoning             string  `json:"reasoning,omitempty"`
 }

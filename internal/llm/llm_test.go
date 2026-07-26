@@ -69,7 +69,7 @@ func TestOpenAICompatibleAnalysisSendsOnlyTextEvidence(t *testing.T) {
 	proposal := domain.BookProposal{
 		ID: "book", SourceRoot: "/secret/library", GroupPath: "/secret/library/Die.Nullform.1",
 		Metadata: domain.BookMetadata{Title: "Die Nullform 1", Author: "Dem Mikhailov", Evidence: map[string]domain.Evidence{"title": {Value: "Die Nullform 1"}}},
-		Files: []domain.AudioFile{{Path: "/secret/library/Die.Nullform.1/01_Kapitel.mp3", Name: "01_Kapitel.mp3"}},
+		Files:    []domain.AudioFile{{Path: "/secret/library/Die.Nullform.1/01_Kapitel.mp3", Name: "01_Kapitel.mp3"}},
 	}
 	suggestion, err := service.Analyze(context.Background(), profile.ID, proposal)
 	if err != nil {
