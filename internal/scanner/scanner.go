@@ -170,10 +170,11 @@ func (s *Scanner) buildProposal(ctx context.Context, root, groupPath string, pat
 			Evidence: make(map[string]domain.Evidence),
 		},
 	}
-	proposal.Companions, err = scanCompanions(groupPath, files)
-	if err != nil {
-		return domain.BookProposal{}, err
+	companions, companionErr := scanCompanions(groupPath, files)
+	if companionErr != nil {
+		return domain.BookProposal{}, companionErr
 	}
+	proposal.Companions = companions
 	folder := inferFolderMetadata(root, groupPath, files)
 	proposal.Metadata.Title, proposal.Metadata.Evidence["title"] = inferTitle(root, groupPath, files, folder)
 	proposal.Metadata.Author, proposal.Metadata.Evidence["author"] = inferAuthor(files, folder)

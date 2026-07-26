@@ -52,7 +52,7 @@ func TestBuildPlansEbooksAndOptionalSidecarCleanup(t *testing.T) {
 	proposal := domain.BookProposal{
 		ID: "book", SourceRoot: source, Status: domain.StatusConfirmed,
 		Metadata: domain.BookMetadata{Author: "Autor", Series: "Serie", SeriesSequence: "2", Title: "Titel"},
-		Files: []domain.AudioFile{{Path: filepath.Join(source, "audio.mp3"), Extension: ".mp3", Size: 10}},
+		Files:    []domain.AudioFile{{Path: filepath.Join(source, "audio.mp3"), Extension: ".mp3", Size: 10}},
 		Companions: []domain.CompanionFile{
 			{Path: filepath.Join(source, "book.epub"), Extension: ".epub", Size: 4, Kind: domain.CompanionEbook},
 			{Path: filepath.Join(source, "folder.jpg"), Extension: ".jpg", Size: 2, Kind: domain.CompanionDiscard},

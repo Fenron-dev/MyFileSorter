@@ -74,15 +74,15 @@ type CompanionFile struct {
 }
 
 type BookProposal struct {
-	ID         string         `json:"id"`
-	SourceRoot string         `json:"sourceRoot"`
-	GroupPath  string         `json:"groupPath"`
-	Metadata   BookMetadata   `json:"metadata"`
-	Files      []AudioFile    `json:"files"`
+	ID         string          `json:"id"`
+	SourceRoot string          `json:"sourceRoot"`
+	GroupPath  string          `json:"groupPath"`
+	Metadata   BookMetadata    `json:"metadata"`
+	Files      []AudioFile     `json:"files"`
 	Companions []CompanionFile `json:"companions,omitempty"`
-	Status     ProposalStatus `json:"status"`
-	Confidence float64        `json:"confidence"`
-	Warnings   []string       `json:"warnings"`
+	Status     ProposalStatus  `json:"status"`
+	Confidence float64         `json:"confidence"`
+	Warnings   []string        `json:"warnings"`
 }
 
 type ScanSummary struct {
