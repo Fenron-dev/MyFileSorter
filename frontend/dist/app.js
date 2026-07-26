@@ -1,4 +1,4 @@
-const state = { proposals: [], selectedId: null, lastPlan: null, lastExecution: null };
+const state = { proposals: [], selectedId: null, lastPlan: null, lastPlanOptions: null, lastExecution: null };
 
 const $ = (selector) => document.querySelector(selector);
 const api = () => window.go?.main?.App || browserPreviewAPI;
@@ -33,6 +33,10 @@ const previewProposal = {
     { path: "/Vorschau/Unsortiert/name_des_windes_01.m4b", name: "name_des_windes_01.m4b", extension: ".m4b", size: 734003200 },
     { path: "/Vorschau/Unsortiert/name_des_windes_02.m4b", name: "name_des_windes_02.m4b", extension: ".m4b", size: 681574400 },
   ],
+  companions: [
+    { path: "/Vorschau/Unsortiert/Der Name des Windes/Der Name des Windes.epub", name: "Der Name des Windes.epub", extension: ".epub", size: 3145728, kind: "ebook" },
+    { path: "/Vorschau/Unsortiert/Der Name des Windes/folder.jpg", name: "folder.jpg", extension: ".jpg", size: 245760, kind: "discard" },
+  ],
 };
 
 const previewCandidates = {
@@ -66,7 +70,7 @@ const browserPreviewAPI = {
     return {
       source,
       proposals: [proposal],
-      summary: { books: 1, files: 2, bytes: 1415577600, metadataAvailable: true },
+      summary: { books: 1, files: 2, ebooks: 1, sidecars: 1, bytes: 1415577600, metadataAvailable: true },
       globalNotes: ["Browser-Vorschau mit Beispieldaten – es werden keine lokalen Dateien gelesen."],
     };
   },
@@ -93,14 +97,24 @@ const browserPreviewAPI = {
     }
     return { ...proposal, metadata, confidence: candidate.confidence, status: "review_required" };
   },
-  async BuildPlan(target) {
+  async BuildPlan(target, options = {}) {
     const confirmed = state.proposals.filter((item) => item.status === "confirmed");
-    const operations = confirmed.flatMap((proposal) => proposal.files.map((file, index) => ({
+    const audio = confirmed.flatMap((proposal) => proposal.files.map((file, index) => ({
       proposalId: proposal.id,
+      action: "move", category: "audio",
       source: file.path,
       target: `${target}/${proposal.metadata.author}/${proposal.metadata.series}/${String(proposal.metadata.seriesSequence).padStart(2, "0")} - ${proposal.metadata.title}/${String(index + 1).padStart(2, "0")} - ${proposal.metadata.title}${file.extension}`,
       size: file.size,
     })));
+    const ebooks = options.moveEbooks ? confirmed.flatMap((proposal) => (proposal.companions || []).filter((file) => file.kind === "ebook").map((file) => ({
+      proposalId: proposal.id, action: "move", category: "ebook", source: file.path,
+      target: `${target}/# Ebooks/${proposal.metadata.author}/${proposal.metadata.series}/${String(proposal.metadata.seriesSequence).padStart(2, "0")} - ${proposal.metadata.title}/${proposal.metadata.title}${file.extension}`,
+      size: file.size,
+    }))) : [];
+    const cleanup = options.cleanupSidecars ? confirmed.flatMap((proposal) => (proposal.companions || []).filter((file) => file.kind === "discard").map((file) => ({
+      proposalId: proposal.id, action: "remove", category: "sidecar", source: file.path, target: "", size: file.size,
+    }))) : [];
+    const operations = [...audio, ...ebooks, ...cleanup];
     return {
       targetRoot: target,
       operations,
@@ -154,6 +168,19 @@ function statusLabel(status) {
   }[status] || status;
 }
 
+function displaySourcePath(proposal) {
+  const root = String(proposal.sourceRoot || "").replaceAll("\\", "/").replace(/\/+$/, "");
+  const group = String(proposal.groupPath || "").replaceAll("\\", "/");
+  if (root && group.startsWith(`${root}/`)) return group.slice(root.length + 1);
+  return group || root || "Unbekannter Quellordner";
+}
+
+function currentSourceFolder(proposal) {
+  const group = String(proposal.groupPath || "");
+  if ((proposal.files || []).length === 1 && group === proposal.files[0].path) return proposal.sourceRoot || group;
+  return group || proposal.sourceRoot || "Unbekannter Quellordner";
+}
+
 function toast(message, isError = false) {
   const element = $("#toast");
   element.textContent = message;
@@ -184,7 +211,11 @@ async function scan() {
     state.selectedId = state.proposals[0]?.id || null;
     $("#workspace").classList.remove("hidden");
     $("#plan-section").classList.remove("hidden");
-    $("#summary").innerHTML = `<strong>${result.summary.books}</strong> Bücher · <strong>${result.summary.files}</strong> Dateien · ${formatBytes(result.summary.bytes)}`;
+    const extras = [
+      result.summary.ebooks ? `${result.summary.ebooks} E-Book${result.summary.ebooks === 1 ? "" : "s"}` : "",
+      result.summary.sidecars ? `${result.summary.sidecars} Begleitdatei${result.summary.sidecars === 1 ? "" : "en"}` : "",
+    ].filter(Boolean).join(" · ");
+    $("#summary").innerHTML = `<strong>${result.summary.books}</strong> Bücher · <strong>${result.summary.files}</strong> Audiodateien · ${formatBytes(result.summary.bytes)}${extras ? ` · ${extras}` : ""}`;
     const notice = $("#notice");
     if (result.globalNotes?.length) {
       notice.textContent = result.globalNotes.join(" ");
@@ -219,6 +250,7 @@ function renderList() {
       <span class="book-copy">
         <strong>${escapeHTML(proposal.metadata.title)}</strong>
         <small>${escapeHTML(proposal.metadata.author)} · ${proposal.files.length} Datei${proposal.files.length === 1 ? "" : "en"}</small>
+        <small class="source-path" title="${escapeHTML(proposal.groupPath)}">${escapeHTML(displaySourcePath(proposal))}</small>
       </span>
       <span class="status-pill ${proposal.status}">${statusLabel(proposal.status)}</span>
     </button>
@@ -256,6 +288,10 @@ function renderDetail() {
       </div>
       <span class="status-pill ${proposal.status}">${statusLabel(proposal.status)}</span>
     </div>
+    <div class="source-location">
+      <span>AKTUELLER ORDNER</span>
+      <strong title="${escapeHTML(currentSourceFolder(proposal))}">${escapeHTML(currentSourceFolder(proposal))}</strong>
+    </div>
     ${proposal.warnings?.length ? `<div class="warning-list">${proposal.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
     <form id="metadata-form" class="metadata-form">
       ${field("Titel", "title", m.title, evidence(m, "title"), true)}
@@ -271,6 +307,7 @@ function renderDetail() {
       <p>QUELLDATEIEN</p>
       ${proposal.files.map((file, index) => `<div><span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHTML(file.name)}</strong><small>${formatBytes(file.size)}</small></div>`).join("")}
     </div>
+    ${renderCompanions(proposal.companions || [])}
     <div class="online-panel hidden" id="online-panel"></div>
     <div class="actions">
       <button class="ghost" id="online" title="Folgt im nächsten Inkrement">Online suchen</button>
@@ -287,6 +324,16 @@ function renderDetail() {
   $("#exclude").addEventListener("click", () => setStatus(proposal.id, "excluded"));
   $("#online").addEventListener("click", () => showProviderChoice(proposal));
   $("#ai").addEventListener("click", () => toast("Die lokale AI-Eskalationsstufe folgt nach den Provider-Schnittstellen."));
+}
+
+function renderCompanions(companions) {
+  if (!companions.length) return "";
+  return `
+    <div class="companion-box">
+      <p>WEITERE DATEIEN</p>
+      ${companions.map((file) => `<div><span class="companion-kind ${file.kind}">${file.kind === "ebook" ? "E-Book" : "Begleitdatei"}</span><strong>${escapeHTML(file.name)}</strong><small>${formatBytes(file.size)}</small></div>`).join("")}
+    </div>
+  `;
 }
 
 function showProviderChoice(proposal) {
@@ -411,8 +458,10 @@ async function buildPlan() {
   const target = $("#target").value.trim();
   if (!target) return toast("Bitte einen Zielordner auswählen.", true);
   try {
-    const plan = await api().BuildPlan(target);
+    const options = planOptions();
+    const plan = await api().BuildPlan(target, options);
     state.lastPlan = plan;
+    state.lastPlanOptions = options;
     state.lastExecution = null;
     const output = $("#plan-output");
     output.innerHTML = `
@@ -421,7 +470,7 @@ async function buildPlan() {
         <span>${plan.operations.length} Operationen · ${formatBytes(plan.totalBytes)}</span>
       </div>
       ${plan.warnings?.length ? `<div class="warning-list">${plan.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
-      <div class="operation-list">${plan.operations.map((op) => `<div><span>${escapeHTML(op.source)}</span><b>→</b><strong>${escapeHTML(op.target)}</strong></div>`).join("")}</div>
+      <div class="operation-list">${plan.operations.map(operationRow).join("")}</div>
       ${plan.executable ? `
         <div class="execution-box">
           <label><input type="checkbox" id="execution-consent" /> Ich habe Quelle und Ziel geprüft und möchte die angezeigten Dateien verschieben.</label>
@@ -441,6 +490,19 @@ async function buildPlan() {
   }
 }
 
+function planOptions() {
+  return {
+    moveEbooks: $("#move-ebooks").checked,
+    cleanupSidecars: $("#cleanup-sidecars").checked,
+  };
+}
+
+function operationRow(operation) {
+  const label = operation.action === "remove" ? "Entfernen (Undo-fähig)" : operation.target;
+  const category = { audio: "Audio", ebook: "E-Book", sidecar: "Bereinigung" }[operation.category] || "Datei";
+  return `<div><i class="operation-category ${escapeHTML(operation.category)}">${category}</i><span>${escapeHTML(operation.source)}</span><b>→</b><strong>${escapeHTML(label)}</strong></div>`;
+}
+
 async function executePlan() {
   const target = $("#target").value.trim();
   const count = state.lastPlan?.operations.length || 0;
@@ -450,7 +512,7 @@ async function executePlan() {
   button.disabled = true;
   button.textContent = "Import läuft …";
   try {
-    const result = await api().ExecutePlan(target);
+    const result = await api().ExecutePlan(target, state.lastPlanOptions || planOptions());
     state.lastExecution = result;
     renderExecutionResult(result);
     if (result.status === "completed") {

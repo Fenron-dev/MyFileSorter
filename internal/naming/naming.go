@@ -53,6 +53,17 @@ func TrackName(index, total int, title, extension string) string {
 	return fmt.Sprintf("%0*d - %s%s", width, index, Segment(title), extension)
 }
 
+func EbookName(index, total int, title, extension string) string {
+	if total <= 1 {
+		extension = strings.ToLower(extension)
+		if extension != "" && !strings.HasPrefix(extension, ".") {
+			extension = "." + extension
+		}
+		return Segment(title) + extension
+	}
+	return TrackName(index, total, title, extension)
+}
+
 func Segment(value string) string {
 	value = strings.ToValidUTF8(value, "")
 	value = invalidChars.ReplaceAllString(value, "-")

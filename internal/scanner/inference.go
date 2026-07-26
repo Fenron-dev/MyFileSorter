@@ -13,12 +13,25 @@ import (
 
 var numberChunk = regexp.MustCompile(`\d+|\D+`)
 
+var (
+	folderSeparators = regexp.MustCompile(`[._]+`)
+	releaseMarker    = regexp.MustCompile(`(?i)\s*(?:\(|\[|,)?\s*(?:ungekürzt|ungekuerzt|abook|audiobook)\s*(?:\)|\]|,)?\s*`)
+	trailingSequence = regexp.MustCompile(`(?i)^(.*?)\s+(?:band|teil)?\s*(\d+(?:[.,]\d+)?)$`)
+)
+
+type folderMetadata struct {
+	Title          string
+	Author         string
+	Series         string
+	SeriesSequence string
+}
+
 func proposalID(paths []string) string {
 	hash := sha256.Sum256([]byte(strings.Join(paths, "\x00")))
 	return hex.EncodeToString(hash[:8])
 }
 
-func inferTitle(root, groupPath string, files []domain.AudioFile) (string, domain.Evidence) {
+func inferTitle(root, groupPath string, files []domain.AudioFile, folder folderMetadata) (string, domain.Evidence) {
 	if value := commonMetadata(files, func(m domain.EmbeddedMetadata) string { return m.Album }); value != "" {
 		return value, domain.Evidence{Value: value, Source: "album_tag", Confidence: .9}
 	}
@@ -26,12 +39,8 @@ func inferTitle(root, groupPath string, files []domain.AudioFile) (string, domai
 		value := files[0].Metadata.Title
 		return value, domain.Evidence{Value: value, Source: "title_tag", Confidence: .82}
 	}
-	if !samePath(groupPath, root) && filepath.Ext(groupPath) == "" {
-		value := cleanName(filepath.Base(groupPath))
-		if match := seriesPrefix.FindStringSubmatch(value); len(match) == 3 {
-			value = match[2]
-		}
-		return value, domain.Evidence{Value: value, Source: "folder", Confidence: .58}
+	if folder.Title != "" {
+		return folder.Title, domain.Evidence{Value: folder.Title, Source: "folder", Confidence: .68}
 	}
 	if len(files) > 0 {
 		value := cleanName(strings.TrimSuffix(files[0].Name, filepath.Ext(files[0].Name)))
@@ -40,14 +49,59 @@ func inferTitle(root, groupPath string, files []domain.AudioFile) (string, domai
 	return "", domain.Evidence{}
 }
 
-func inferAuthor(files []domain.AudioFile) (string, domain.Evidence) {
+func inferAuthor(files []domain.AudioFile, folder folderMetadata) (string, domain.Evidence) {
 	if value := commonMetadata(files, func(m domain.EmbeddedMetadata) string { return m.AlbumArtist }); value != "" {
 		return value, domain.Evidence{Value: value, Source: "album_artist_tag", Confidence: .92}
 	}
 	if value := commonMetadata(files, func(m domain.EmbeddedMetadata) string { return m.Artist }); value != "" {
 		return value, domain.Evidence{Value: value, Source: "artist_tag", Confidence: .87}
 	}
+	if folder.Author != "" {
+		return folder.Author, domain.Evidence{Value: folder.Author, Source: "folder", Confidence: .64}
+	}
 	return "", domain.Evidence{}
+}
+
+func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folderMetadata {
+	if samePath(groupPath, root) || (len(files) == 1 && samePath(groupPath, files[0].Path)) {
+		return folderMetadata{}
+	}
+	name := cleanFolderName(filepath.Base(groupPath))
+	if name == "" {
+		return folderMetadata{}
+	}
+	parts := strings.Split(name, " - ")
+	for index := range parts {
+		parts[index] = strings.TrimSpace(parts[index])
+	}
+	result := folderMetadata{Title: name}
+	if len(parts) >= 2 {
+		result.Author = parts[0]
+		result.Title = strings.Join(parts[1:], " - ")
+	}
+	if len(parts) >= 3 {
+		if match := trailingSequence.FindStringSubmatch(parts[1]); len(match) == 3 {
+			result.Series = strings.TrimSpace(match[1])
+			result.SeriesSequence = strings.ReplaceAll(match[2], ",", ".")
+			result.Title = strings.Join(parts[2:], " - ")
+		}
+	}
+	return result
+}
+
+func cleanFolderName(value string) string {
+	lower := strings.ToLower(value)
+	for extension := range audioExtensions {
+		if strings.HasSuffix(lower, extension) {
+			value = strings.TrimSpace(value[:len(value)-len(extension)])
+			break
+		}
+	}
+	value = folderSeparators.ReplaceAllString(value, " ")
+	value = releaseMarker.ReplaceAllString(value, " ")
+	value = strings.Join(strings.Fields(value), " ")
+	value = strings.Trim(value, " ,-_")
+	return value
 }
 
 func inferField(files []domain.AudioFile, field string) (string, domain.Evidence) {

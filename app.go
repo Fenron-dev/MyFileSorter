@@ -108,18 +108,18 @@ func (a *App) SetProposalStatus(id string, status domain.ProposalStatus) (domain
 	return cloneProposal(*proposal), nil
 }
 
-func (a *App) BuildPlan(target string) (domain.OperationPlan, error) {
+func (a *App) BuildPlan(target string, options domain.PlanOptions) (domain.OperationPlan, error) {
 	a.mu.RLock()
 	proposals := cloneProposals(a.proposals)
 	a.mu.RUnlock()
-	return planner.Build(target, proposals)
+	return planner.BuildWithOptions(target, proposals, options)
 }
 
-func (a *App) ExecutePlan(target string) (domain.ExecutionResult, error) {
+func (a *App) ExecutePlan(target string, options domain.PlanOptions) (domain.ExecutionResult, error) {
 	a.mu.RLock()
 	proposals := cloneProposals(a.proposals)
 	a.mu.RUnlock()
-	plan, err := planner.Build(target, proposals)
+	plan, err := planner.BuildWithOptions(target, proposals, options)
 	if err != nil {
 		return domain.ExecutionResult{}, err
 	}
@@ -282,6 +282,7 @@ func cloneProposals(input []domain.BookProposal) []domain.BookProposal {
 
 func cloneProposal(input domain.BookProposal) domain.BookProposal {
 	input.Files = append([]domain.AudioFile(nil), input.Files...)
+	input.Companions = append([]domain.CompanionFile(nil), input.Companions...)
 	input.Warnings = append([]string(nil), input.Warnings...)
 	evidence := make(map[string]domain.Evidence, len(input.Metadata.Evidence))
 	for key, value := range input.Metadata.Evidence {

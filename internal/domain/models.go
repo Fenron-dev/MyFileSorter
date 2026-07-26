@@ -58,12 +58,28 @@ type AudioFile struct {
 	MetadataNotice string           `json:"metadataNotice,omitempty"`
 }
 
+type CompanionKind string
+
+const (
+	CompanionEbook   CompanionKind = "ebook"
+	CompanionDiscard CompanionKind = "discard"
+)
+
+type CompanionFile struct {
+	Path      string        `json:"path"`
+	Name      string        `json:"name"`
+	Extension string        `json:"extension"`
+	Size      int64         `json:"size"`
+	Kind      CompanionKind `json:"kind"`
+}
+
 type BookProposal struct {
 	ID         string         `json:"id"`
 	SourceRoot string         `json:"sourceRoot"`
 	GroupPath  string         `json:"groupPath"`
 	Metadata   BookMetadata   `json:"metadata"`
 	Files      []AudioFile    `json:"files"`
+	Companions []CompanionFile `json:"companions,omitempty"`
 	Status     ProposalStatus `json:"status"`
 	Confidence float64        `json:"confidence"`
 	Warnings   []string       `json:"warnings"`
@@ -72,6 +88,8 @@ type BookProposal struct {
 type ScanSummary struct {
 	Books             int   `json:"books"`
 	Files             int   `json:"files"`
+	Ebooks            int   `json:"ebooks"`
+	Sidecars          int   `json:"sidecars"`
 	Bytes             int64 `json:"bytes"`
 	MetadataAvailable bool  `json:"metadataAvailable"`
 }
@@ -86,9 +104,16 @@ type ScanResult struct {
 
 type PlannedOperation struct {
 	ProposalID string `json:"proposalId"`
+	Action     string `json:"action"`
+	Category   string `json:"category"`
 	Source     string `json:"source"`
 	Target     string `json:"target"`
 	Size       int64  `json:"size"`
+}
+
+type PlanOptions struct {
+	MoveEbooks      bool `json:"moveEbooks"`
+	CleanupSidecars bool `json:"cleanupSidecars"`
 }
 
 type OperationPlan struct {

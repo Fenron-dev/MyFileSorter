@@ -9,13 +9,15 @@ MyFileSorter arbeitet standardmäßig vollständig lokal. Ein Scan löst weder N
 1. Unterstützte Audiodateien rekursiv erfassen.
 2. Dateinamen, Pfade und eingebettete Metadaten lesen.
 3. Dateien konservativ zu Hörbüchern gruppieren.
-4. Einen lokalen Metadatenvorschlag mit Herkunft und Konfidenz erzeugen.
-5. Den Vorschlag durch den Nutzer bestätigen oder bearbeiten lassen.
-6. Bei Bedarf später Audible/Google Books manuell abfragen.
-7. Bei Bedarf später AI zur strukturierten Erkennung und Suchanfragebildung verwenden.
-8. Nur bestätigte Vorschläge in den Operationsplan aufnehmen.
-9. Vor der Ausführung Quelle, Ziel und Kollisionen erneut prüfen.
-10. Nach ausdrücklicher Bestätigung journalisiert kopieren, per SHA-256 prüfen und erst dann die Quelle entfernen.
+4. Den Hörbuchordner gegenüber generischen Tracknamen wie „Opening Credits“ oder „Kapitel 1“ priorisieren.
+5. Strukturierte Ordnernamen wie `Autor - Serie 03 - Titel` lokal zerlegen.
+6. Einen lokalen Metadatenvorschlag mit Herkunft, Quellpfad und Konfidenz erzeugen.
+7. Den Vorschlag durch den Nutzer bestätigen oder bearbeiten lassen.
+8. Bei Bedarf Audible/Google Books manuell abfragen.
+9. Bei Bedarf später AI zur strukturierten Erkennung und Suchanfragebildung verwenden.
+10. Nur bestätigte Vorschläge in den Operationsplan aufnehmen.
+11. Vor der Ausführung Quelle, Ziel und Kollisionen erneut prüfen.
+12. Nach ausdrücklicher Bestätigung journalisiert kopieren, per SHA-256 prüfen und erst dann die Quelle entfernen.
 
 ## Statusmodell
 
@@ -52,6 +54,8 @@ Einzelbuch: Autor/Titel/TT - Titel.ext
 - Dezimale Seriennummern bleiben erhalten.
 - Namen werden für Windows, macOS und Linux normalisiert.
 - Bestehende Zieldateien werden niemals überschrieben.
+- E-Books werden optional parallel unter `# Ebooks` mit derselben Autor-/Serienstruktur abgelegt.
+- Coverbilder, NFO-, M3U- und CUE-Dateien werden nur nach aktivierter Bereinigung aus dem Quellordner entfernt und für Undo journalisiert aufbewahrt.
 
 ## Spätere Eskalationsstufen
 

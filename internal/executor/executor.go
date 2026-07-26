@@ -39,6 +39,8 @@ type Journal struct {
 
 type JournalOperation struct {
 	ProposalID string    `json:"proposalId"`
+	Action     string    `json:"action"`
+	Category   string    `json:"category"`
 	Source     string    `json:"source"`
 	Target     string    `json:"target"`
 	Size       int64     `json:"size"`
@@ -173,11 +175,32 @@ func (s *Service) newJournal(plan domain.OperationPlan) (*Journal, error) {
 		CreatedAt: s.now(), UpdatedAt: s.now(), Operations: make([]JournalOperation, len(plan.Operations)),
 	}
 	for index, op := range plan.Operations {
+		target := op.Target
+		action := op.Action
+		if action == "" {
+			action = "move"
+		}
+		if action == "remove" {
+			target, err = s.quarantineTarget(id, index, op.Source)
+			if err != nil {
+				return nil, err
+			}
+		}
 		journal.Operations[index] = JournalOperation{
-			ProposalID: op.ProposalID, Source: op.Source, Target: op.Target, Size: op.Size, Status: "pending",
+			ProposalID: op.ProposalID, Action: action, Category: op.Category,
+			Source: op.Source, Target: target, Size: op.Size, Status: "pending",
 		}
 	}
 	return journal, nil
+}
+
+func (s *Service) quarantineTarget(journalID string, index int, source string) (string, error) {
+	directory, err := s.directory()
+	if err != nil {
+		return "", err
+	}
+	name := fmt.Sprintf("%04d-%s", index+1, filepath.Base(source))
+	return filepath.Join(filepath.Dir(directory), "quarantine", journalID, name), nil
 }
 
 func (s *Service) directory() (string, error) {

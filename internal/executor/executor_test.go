@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/dennis/myfilesorter/internal/domain"
@@ -86,6 +87,35 @@ func TestUndoRejectsChangedTarget(t *testing.T) {
 	}
 	if _, err := os.Stat(source); !os.IsNotExist(err) {
 		t.Fatalf("source should not be restored: %v", err)
+	}
+}
+
+func TestCleanupMovesSidecarToUndoableQuarantine(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "book", "folder.jpg")
+	writeTestFile(t, source, "cover")
+	service := New(filepath.Join(root, "config", "journals"))
+	result, err := service.Execute(context.Background(), domain.OperationPlan{Executable: true, Operations: []domain.PlannedOperation{{
+		Action: "remove", Category: "sidecar", Source: source, Size: 5,
+	}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(source); !os.IsNotExist(err) {
+		t.Fatalf("sidecar should be removed from source: %v", err)
+	}
+	journal, err := service.load(result.JournalID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(journal.Operations[0].Target, filepath.Join("quarantine", result.JournalID)) {
+		t.Fatalf("unexpected quarantine target: %s", journal.Operations[0].Target)
+	}
+	if _, err := service.Undo(context.Background(), result.JournalID); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(source); err != nil || string(data) != "cover" {
+		t.Fatalf("sidecar was not restored: %q, %v", data, err)
 	}
 }
 

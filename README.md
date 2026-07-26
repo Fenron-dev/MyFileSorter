@@ -7,11 +7,15 @@ Der aktuelle Stand ist das erste ausführbare Inkrement:
 - rekursiver, rein lokaler Scan unterstützter Audiodateien
 - Auslesen eingebetteter Metadaten über ein optional vorhandenes `ffprobe`
 - lokale Vorschläge aus Dateinamen und Tags
+- ordnerbasierte Erkennung von Mustern wie `Autor - Serie 03 - Titel`
+- sichtbarer aktueller Quellpfad pro Vorschlag
 - explizite Nutzerbestätigung pro Hörbuch
 - konfliktfreier Dry-Run-Operationsplan
 - ausdrücklich bestätigte, journalisierte Ausführung
 - SHA-256-Prüfung jeder Kopie, bevor die Quelldatei entfernt wird
 - Undo, solange die importierten Zieldateien unverändert sind
+- optionales Einsortieren von E-Books unter `# Ebooks/Autor/Serie oder Buch`
+- optionale, Undo-fähige Bereinigung von Cover-, NFO-, M3U- und CUE-Dateien
 - bewusst ausgelöste Online-Suche über Audible Deutschland oder Google Books
 - auswählbare Online-Treffer, die erneut vom Nutzer bestätigt werden müssen
 - schlanke Wails-Oberfläche ohne Frontend-Abhängigkeiten
@@ -27,6 +31,9 @@ Autor/Serie/01 - Buchtitel/01 - Buchtitel.m4b
 
 Ohne Serie:
 Autor/Buchtitel/01 - Buchtitel.m4b
+
+E-Books:
+# Ebooks/Autor/Serie/01 - Buchtitel/Buchtitel.epub
 ```
 
 ## Entwicklung
