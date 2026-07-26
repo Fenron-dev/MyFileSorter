@@ -218,7 +218,7 @@ type AISuggestion struct {
 	Narrator              string  `json:"narrator,omitempty"`
 	Language              string  `json:"language,omitempty"`
 	SuggestedSearchTitle  string  `json:"suggestedSearchTitle,omitempty"`
-	SuggestedSearchAuthor string `json:"suggestedSearchAuthor,omitempty"`
+	SuggestedSearchAuthor string  `json:"suggestedSearchAuthor,omitempty"`
 	Confidence            float64 `json:"confidence"`
 	Reasoning             string  `json:"reasoning,omitempty"`
 }
