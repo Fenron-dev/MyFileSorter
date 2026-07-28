@@ -13,7 +13,8 @@ button:disabled { cursor: wait; opacity: .6; }
 .hidden { display: none !important; }
 .shell { max-width: 1440px; margin: 0 auto; min-height: 100vh; }
 .topbar { height: 82px; padding: 0 42px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #d7d2c7; background: rgba(247, 244, 237, .9); }
-.brand-mark { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; color: #f7f4ed; background: #204e43; font-family: Georgia, serif; font-size: 22px; }
+.brand-mark { width: 46px; height: 46px; flex: 0 0 auto; overflow: hidden; border: 1px solid #ddd7cb; border-radius: 13px; display: grid; place-items: center; background: #f7f4ed; box-shadow: 0 4px 14px rgba(32, 78, 67, .09); }
+.brand-mark img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .eyebrow, .step-label, .detail-kicker { margin: 0 0 4px; color: #897c68; font-size: 10px; font-weight: 800; letter-spacing: .17em; }
 .topbar h1 { margin: 0; font-family: Georgia, serif; font-size: 21px; font-weight: 600; }
 .topbar-actions { margin-left: auto; display: flex; gap: 8px; }
