@@ -147,6 +147,23 @@ func TestInstallFileNoReplaceRejectsLateCollision(t *testing.T) {
 	}
 }
 
+func TestInstallFileNoReplacePublishesCompletedFile(t *testing.T) {
+	root := physicalTempDir(t)
+	temporary := filepath.Join(root, "transfer.part")
+	target := filepath.Join(root, "book.m4b")
+	writeTestFile(t, temporary, "complete")
+
+	if err := installFileNoReplace(temporary, target); err != nil {
+		t.Fatalf("expected completed file to be published: %v", err)
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "complete" {
+		t.Fatalf("published target is invalid: %q, %v", data, err)
+	}
+	if _, err := os.Lstat(temporary); !os.IsNotExist(err) {
+		t.Fatalf("temporary name should be removed after publication: %v", err)
+	}
+}
+
 func TestExecuteRejectsSourceSwapBetweenPathCheckAndOpen(t *testing.T) {
 	root := physicalTempDir(t)
 	source := filepath.Join(root, "source", "book.m4b")

@@ -4,14 +4,15 @@ package executor
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"syscall"
 )
 
-func installFileNoReplace(temporary, target string) error {
+func installFileViaHardlink(temporary, target string) error {
 	// A hard link is an atomic create-if-absent operation. Both files live in
-	// the same directory/filesystem, so a successful link publishes the fully
-	// synced inode without the overwrite semantics of os.Rename on Unix.
+	// the same directory/filesystem, so it remains a safe fallback where the
+	// platform's exclusive-rename primitive is unavailable.
 	if err := os.Link(temporary, target); err != nil {
 		return err
 	}
@@ -19,6 +20,18 @@ func installFileNoReplace(temporary, target string) error {
 	// temporary name must not turn a successful installation into an untracked
 	// failed operation; the caller and startup cleanup can retry it.
 	_ = os.Remove(temporary)
+	return nil
+}
+
+func fallbackToHardlink(temporary, target string, renameErr error) error {
+	if !errors.Is(renameErr, syscall.ENOTSUP) &&
+		!errors.Is(renameErr, syscall.ENOSYS) &&
+		!errors.Is(renameErr, syscall.EINVAL) {
+		return renameErr
+	}
+	if err := installFileViaHardlink(temporary, target); err != nil {
+		return fmt.Errorf("exklusives Umbenennen nicht unterstützt (%v); Hardlink-Rückfall fehlgeschlagen: %w", renameErr, err)
+	}
 	return nil
 }
 
