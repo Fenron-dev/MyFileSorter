@@ -3,16 +3,27 @@ name: Desktop builds
 on:
   push:
     branches: [main, 'codex/**']
+    tags: ['v*']
   workflow_dispatch:
-  release:
-    types: [published]
 
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-builds-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
+  quality:
+    uses: ./.github/workflows/quality.yml
+    permissions:
+      contents: read
+
   build:
     name: ${{ matrix.name }}
+    needs: quality
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -34,22 +45,209 @@ jobs:
             artifact: MyFileSorter-macos-x64
             command: wails build -clean
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: Install Linux WebKit dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
-      - uses: actions/setup-go@v5
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          go-version: '1.23.x'
-          cache: false
+          go-version: '1.26.x'
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+
+      - name: Download and verify dependencies
+        run: |
+          go mod download
+          go mod verify
+
       - name: Install pinned Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+
       - name: Build native application
         run: ${{ matrix.command }}
-      - uses: actions/upload-artifact@v4
+
+      - name: Sign Windows executable when release secrets are configured
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
+            Write-Host 'Windows signing secrets are not configured; leaving the executable unsigned.'
+            exit 0
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'myfilesorter-signing.pfx'
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE))
+          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          $executable = Get-ChildItem 'build/bin' -Filter '*.exe' | Select-Object -First 1
+
+          if (-not $signTool -or -not $executable) {
+            throw 'SignTool or the built executable could not be found.'
+          }
+
+          & $signTool.FullName sign /f $certificatePath /p $env:WINDOWS_CERTIFICATE_PASSWORD /fd SHA256 /tr 'http://timestamp.digicert.com' /td SHA256 $executable.FullName
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Remove-Item $certificatePath -Force
+
+      - name: Sign macOS application when release secrets are configured
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE" || -z "$MACOS_CERTIFICATE_PASSWORD" || -z "$MACOS_SIGNING_IDENTITY" ]]; then
+            echo 'macOS signing secrets are not configured; leaving the application unsigned.'
+            exit 0
+          fi
+
+          app_path="$(find build/bin -maxdepth 1 -name '*.app' -print -quit)"
+          if [[ -z "$app_path" ]]; then
+            echo 'The built macOS application bundle could not be found.' >&2
+            exit 1
+          fi
+
+          certificate_path="$RUNNER_TEMP/myfilesorter-signing.p12"
+          keychain_path="$RUNNER_TEMP/myfilesorter-signing.keychain-db"
+          keychain_password="$(openssl rand -hex 24)"
+          printf '%s' "$MACOS_CERTIFICATE" | /usr/bin/base64 -D > "$certificate_path"
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain_path"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain_path"
+          security list-keychains -d user -s "$keychain_path"
+          codesign --deep --force --options runtime --timestamp --sign "$MACOS_SIGNING_IDENTITY" "$app_path"
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+      - name: Notarize macOS application when release secrets are configured
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE" || -z "$MACOS_CERTIFICATE_PASSWORD" || -z "$MACOS_SIGNING_IDENTITY" || -z "$APPLE_ID" || -z "$APPLE_TEAM_ID" || -z "$APPLE_APP_PASSWORD" ]]; then
+            echo 'macOS notarization secrets are not fully configured; skipping notarization.'
+            exit 0
+          fi
+
+          app_path="$(find build/bin -maxdepth 1 -name '*.app' -print -quit)"
+          archive_path="$RUNNER_TEMP/myfilesorter-notarization.zip"
+          ditto -c -k --keepParent "$app_path" "$archive_path"
+          xcrun notarytool submit "$archive_path" --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple "$app_path"
+          xcrun stapler validate "$app_path"
+
+      - name: Package Unix application
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          mkdir -p dist
+          archive="$GITHUB_WORKSPACE/dist/${{ matrix.artifact }}.tar.gz"
+          tar -C build/bin -czf "$archive" .
+          cd dist
+          shasum -a 256 "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256"
+
+      - name: Clean up temporary macOS signing material
+        if: always() && runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          security delete-keychain "$RUNNER_TEMP/myfilesorter-signing.keychain-db" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/myfilesorter-signing.p12" "$RUNNER_TEMP/myfilesorter-notarization.zip"
+
+      - name: Package Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path 'dist' -Force | Out-Null
+          $archive = "dist/${{ matrix.artifact }}.zip"
+          Compress-Archive -Path 'build/bin/*' -DestinationPath $archive -Force
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+          "$hash  ${{ matrix.artifact }}.zip" | Set-Content -Path "$archive.sha256" -Encoding ascii
+
+      - name: Clean up temporary Windows signing material
+        if: always() && runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $certificatePath = Join-Path $env:RUNNER_TEMP 'myfilesorter-signing.pfx'
+          Remove-Item $certificatePath -Force -ErrorAction SilentlyContinue
+
+      - name: Upload packaged application
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.artifact }}
-          path: build/bin/**
+          path: dist/*
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Prepare draft GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [quality, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - name: Download packaged applications
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Verify all packaged applications
+        shell: bash
+        run: |
+          cd release-assets
+          shopt -s nullglob
+          archives=( *.zip *.tar.gz )
+          checksums=( *.sha256 )
+          if (( ${#archives[@]} != 4 || ${#checksums[@]} != 4 )); then
+            echo "Expected four packages and four checksum files, found ${#archives[@]} and ${#checksums[@]}." >&2
+            exit 1
+          fi
+          for checksum in "${checksums[@]}"; do
+            sha256sum --check "$checksum"
+          done
+
+      - name: Create combined checksum manifest
+        shell: bash
+        run: |
+          cd release-assets
+          find . -maxdepth 1 -type f \( -name '*.zip' -o -name '*.tar.gz' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  \./#  #' > SHA256SUMS
+
+      - name: Create or update draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release create "$RELEASE_TAG" --verify-tag --draft --generate-notes --title "MyFileSorter $RELEASE_TAG"
+          fi
+          gh release upload "$RELEASE_TAG" release-assets/* --clobber

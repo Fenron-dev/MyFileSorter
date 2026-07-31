@@ -4,16 +4,23 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'" />
     <title>MyFileSorter</title>
+    <link rel="icon" type="image/png" href="/assets/myfilesorter-logo.png" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="shell">
       <header class="topbar">
-        <div class="brand-mark" aria-hidden="true">M</div>
+        <div class="brand-mark" aria-hidden="true"><img src="/assets/myfilesorter-logo.png" alt="" /></div>
         <div>
           <p class="eyebrow">AUDIOBOOKSHELF PREPARATION</p>
           <h1>MyFileSorter</h1>
+        </div>
+        <div class="topbar-actions">
+          <button class="log-button" id="open-history"><span>↺</span> Importverlauf</button>
+          <button class="log-button" id="open-ai-profiles"><span>✦</span> AI-Profile</button>
+          <button class="log-button" id="open-log"><span>≡</span> Sitzungslog</button>
         </div>
         <div class="local-badge"><span></span> Lokal zuerst</div>
       </header>
@@ -25,13 +32,21 @@
             <h2>Unsortierte Hörbücher<br />sicher vorbereiten.</h2>
             <p class="hero-copy">Der erste Scan bleibt vollständig auf diesem Gerät. Du entscheidest über jeden Vorschlag, bevor ein Zielplan entsteht.</p>
           </div>
-          <div class="source-panel">
+          <div class="source-panel" id="source-drop-zone">
             <label for="source">Quellordner</label>
             <div class="path-row">
               <input id="source" placeholder="Ordner mit unsortierten Hörbüchern" />
               <button class="icon-button" id="choose-source" title="Quellordner auswählen">…</button>
             </div>
-            <button class="primary" id="scan">Lokal scannen <span>→</span></button>
+            <div class="source-actions">
+              <button class="primary" id="scan">Lokal scannen <span>→</span></button>
+              <button class="ghost danger hidden" id="cancel-scan" type="button">Scan abbrechen</button>
+            </div>
+            <div class="scan-progress hidden" id="scan-progress" role="status" aria-live="polite">
+              <span class="scan-progress-indicator" aria-hidden="true"></span>
+              <span id="scan-progress-text">Scan wird vorbereitet …</span>
+            </div>
+            <div class="drop-hint"><strong>Oder Ordner hier ablegen</strong><span>Audiodateien werden anschließend lokal eingelesen</span></div>
             <p class="privacy-note">Keine Online- oder AI-Anfrage beim Scan.</p>
           </div>
         </section>
@@ -45,6 +60,38 @@
             <div class="summary" id="summary"></div>
           </div>
           <div class="notice hidden" id="notice"></div>
+          <div class="review-toolbar" aria-label="Vorschläge filtern und gesammelt bearbeiten">
+            <div class="review-filters">
+              <label class="review-search"><span class="sr-only">Vorschläge durchsuchen</span><input id="review-search" type="search" placeholder="Titel, Autor, Serie oder Pfad suchen …" /></label>
+              <label><span class="sr-only">Status filtern</span><select id="review-status">
+                <option value="all">Alle Status</option>
+                <option value="review_required">Zu prüfen</option>
+                <option value="confirmed">Ausgewählt</option>
+                <option value="excluded">Ausgeschlossen</option>
+                <option value="imported">Importiert</option>
+                <option value="conflict">Konflikte</option>
+                <option value="error">Fehler</option>
+              </select></label>
+              <label><span class="sr-only">Sortierung</span><select id="review-sort">
+                <option value="source">Quellreihenfolge</option>
+                <option value="title">Titel A–Z</option>
+                <option value="author">Autor A–Z</option>
+                <option value="confidence_asc">Unsicherste zuerst</option>
+                <option value="status">Status</option>
+              </select></label>
+            </div>
+            <div class="review-bulk">
+              <span id="review-counts" class="review-counts" aria-live="polite"></span>
+              <button class="ghost" id="select-safe-visible" type="button" title="Nur konfliktfreie Vorschläge ohne Warnungen und mit mindestens 75 % Konfidenz auswählen">Sichere sichtbare auswählen</button>
+              <button class="ghost" id="select-visible" type="button">Sichtbare auswählen</button>
+              <button class="ghost" id="deselect-visible" type="button">Sichtbare abwählen</button>
+              <span class="merge-divider" aria-hidden="true"></span>
+              <span id="merge-selected-count" class="merge-selected-count">0 zum Verbinden markiert</span>
+              <button class="ghost" id="clear-merge-selection" type="button">Markierung löschen</button>
+              <button class="ghost merge-action" id="merge-selected" type="button">Markierte zusammenführen</button>
+              <button class="secondary" id="next-review" type="button">Nächstes ungeprüftes</button>
+            </div>
+          </div>
           <div class="review-layout">
             <aside class="book-list" id="book-list"></aside>
             <section class="detail empty" id="detail">
@@ -57,7 +104,7 @@
           <div class="section-heading">
             <div>
               <p class="step-label">03 · ZIELPLAN</p>
-              <h2>Dry Run erstellen</h2>
+              <h2>Verschieben vorbereiten</h2>
             </div>
           </div>
           <div class="plan-controls">
@@ -65,11 +112,104 @@
               <input id="target" placeholder="Zielordner der Audiobookshelf-Bibliothek" />
               <button class="icon-button" id="choose-target" title="Zielordner auswählen">…</button>
             </div>
-            <button class="secondary" id="build-plan">Operationsplan anzeigen</button>
+            <button class="secondary" id="build-plan">Vorschau erstellen</button>
+          </div>
+          <div class="plan-options">
+            <label>
+              <span><strong>Bandnummern</strong><small>Breite der Nummer vor dem Buchordner</small></span>
+              <select id="book-number-width">
+                <option value="-1">Automatisch nach höchstem Band</option>
+                <option value="1">Keine Auffüllung: 1</option>
+                <option value="2" selected>2-stellig: 01</option>
+                <option value="3">3-stellig: 001</option>
+                <option value="4">4-stellig: 0001</option>
+                <option value="5">5-stellig: 00001</option>
+                <option value="6">6-stellig: 000001</option>
+              </select>
+            </label>
+            <label>
+              <span><strong>Tracknummern</strong><small>Automatisch richtet sich nach der höchsten Tracknummer</small></span>
+              <select id="track-number-width">
+                <option value="-1">Automatisch nach Dateianzahl</option>
+                <option value="1">Keine Auffüllung: 1</option>
+                <option value="2" selected>2-stellig: 01</option>
+                <option value="3">3-stellig: 001</option>
+                <option value="4">4-stellig: 0001</option>
+                <option value="5">5-stellig: 00001</option>
+                <option value="6">6-stellig: 000001</option>
+              </select>
+            </label>
+            <label>
+              <span><strong>Audiodateinamen</strong><small>Vorhandene Kapitelbezeichnungen behalten oder durch den Buchtitel ersetzen</small></span>
+              <select id="audio-file-naming">
+                <option value="source_title" selected>Vorhandenen Namen bereinigen</option>
+                <option value="book_title">Einheitlich nach Buchtitel</option>
+              </select>
+            </label>
+            <label>
+              <input type="checkbox" id="move-ebooks" checked />
+              <span><strong>E-Books einsortieren</strong><small>EPUB, PDF, MOBI und ähnliche Dateien nach „# Ebooks“ verschieben</small></span>
+            </label>
+            <label>
+              <input type="checkbox" id="cleanup-sidecars" />
+              <span><strong>Begleitdateien entfernen</strong><small>Cover, NFO, Playlists und CUE nach erfolgreicher Prüfung entfernen; Undo bleibt möglich</small></span>
+            </label>
+            <label>
+              <span><strong>Vorhandene Zieldateien</strong><small>Identische Dateien können nach einem SHA-256-Vergleich sicher übersprungen werden</small></span>
+              <select id="existing-file-policy">
+                <option value="error" selected>Als Konflikt behandeln</option>
+                <option value="skip_identical">Identische sicher überspringen</option>
+              </select>
+            </label>
           </div>
           <div id="plan-output"></div>
         </section>
       </main>
+    </div>
+    <div class="log-overlay hidden" id="history-overlay" role="dialog" aria-modal="true" aria-labelledby="history-title">
+      <section class="log-dialog history-dialog">
+        <header>
+          <div><p class="eyebrow">JOURNALISIERTE DATEIOPERATIONEN</p><h2 id="history-title">Importverlauf</h2></div>
+          <div class="log-header-actions"><button class="ghost" id="refresh-history">Aktualisieren</button><button class="panel-close" id="close-history" aria-label="Schließen">×</button></div>
+        </header>
+        <div id="history-content" class="history-content"></div>
+      </section>
+    </div>
+    <div class="log-overlay hidden" id="log-overlay" role="dialog" aria-modal="true" aria-labelledby="log-title">
+      <section class="log-dialog">
+        <header>
+          <div><p class="eyebrow">DIAGNOSE & NACHVOLLZIEHBARKEIT</p><h2 id="log-title">Sitzungslog</h2></div>
+          <div class="log-header-actions"><label class="log-session-picker"><span class="sr-only">Log-Sitzung</span><select id="log-session-select" aria-label="Log-Sitzung auswählen"></select></label><button class="ghost" id="refresh-log">Aktualisieren</button><button class="panel-close" id="close-log" aria-label="Schließen">×</button></div>
+        </header>
+        <div id="log-content" class="log-content"></div>
+      </section>
+    </div>
+    <div class="log-overlay hidden" id="ai-profile-overlay" role="dialog" aria-modal="true" aria-labelledby="ai-profile-title">
+      <section class="log-dialog ai-profile-dialog">
+        <header>
+          <div><p class="eyebrow">LOKAL GESPEICHERTE VERBINDUNGEN</p><h2 id="ai-profile-title">AI-Profile</h2></div>
+          <button class="panel-close" id="close-ai-profiles" aria-label="Schließen">×</button>
+        </header>
+        <div class="ai-profile-layout">
+          <aside id="ai-profile-list" class="ai-profile-list"></aside>
+          <form id="ai-profile-form" class="ai-profile-form">
+            <input type="hidden" name="id" />
+            <label><span>Profilname</span><input name="name" required placeholder="Mein lokales Modell" /></label>
+            <label><span>Anbieter</span><select name="provider" id="ai-profile-provider">
+              <option value="ollama">Ollama</option><option value="lmstudio">LM Studio</option>
+              <option value="openai">OpenAI</option><option value="openrouter">OpenRouter</option>
+              <option value="groq">Groq</option><option value="openai_compatible">OpenAI-kompatibel</option>
+            </select></label>
+            <label><span>Endpoint</span><input name="baseUrl" required placeholder="http://127.0.0.1:11434" /></label>
+            <label><span>Modell</span><input name="model" required placeholder="qwen3:8b" /></label>
+            <label><span>API-Schlüssel</span><input name="apiKey" type="password" autocomplete="new-password" placeholder="Leer lassen, um vorhandenen Schlüssel zu behalten" /><small id="ai-key-state">Für lokale Anbieter meist nicht erforderlich.</small></label>
+            <label class="inline-check"><input name="clearApiKey" type="checkbox" /><span>Gespeicherten Schlüssel entfernen</span></label>
+            <label class="inline-check"><input name="isDefault" type="checkbox" /><span>Als Standardprofil verwenden</span></label>
+            <p class="profile-security">Schlüssel liegen im System-Schlüsselbund und werden weder an die Oberfläche zurückgegeben noch protokolliert.</p>
+            <div class="profile-actions"><button type="button" class="ghost danger hidden" id="delete-ai-profile">Löschen</button><span></span><button type="button" class="ghost" id="test-ai-profile">Verbindung testen</button><button class="primary compact" type="submit">Profil speichern</button></div>
+          </form>
+        </div>
+      </section>
     </div>
     <div class="toast hidden" id="toast"></div>
     <script src="/app.js" type="module"></script>

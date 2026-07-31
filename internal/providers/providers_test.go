@@ -67,7 +67,7 @@ func TestAudibleCandidate(t *testing.T) {
 		SeriesPrimary: &struct {
 			Name     string `json:"name"`
 			Position string `json:"position"`
-		}{Name: "Eine Reihe", Position: "Book 2, Dramatized"},
+		}{Name: "Eine Reihe [German Edition]", Position: "Book 2, Dramatized"},
 	}
 	got := audibleCandidate(item)
 	if got.Author != "Eine Autorin" || got.Narrator != "Ein Sprecher" {
@@ -75,6 +75,40 @@ func TestAudibleCandidate(t *testing.T) {
 	}
 	if got.Series != "Eine Reihe" || got.SeriesSequence != "2" {
 		t.Fatalf("unexpected series: %#v", got)
+	}
+}
+
+func TestAudibleSearchUsesCatalogSeriesWhenDetailHasNone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		switch request.URL.Path {
+		case "/1.0/catalog/products":
+			_, _ = response.Write([]byte(`{"products":[{"asin":"B012345678","series":[{"title":"Willkommen im Multiversum (German Edition)","sequence":"3"}]}]}`))
+		case "/1.0/catalog/products/B012345678":
+			_, _ = response.Write([]byte(`{"product":{"asin":"B012345678","series":[{"title":"Willkommen im Multiversum (German Edition)","sequence":"3"}]}}`))
+		case "/books/B012345678":
+			_, _ = response.Write([]byte(`{"asin":"B012345678","title":"Kollaps","authors":[{"name":"Sean Oswald"}]}`))
+		default:
+			http.NotFound(response, request)
+		}
+	}))
+	defer server.Close()
+
+	provider := NewAudible(server.Client())
+	provider.catalogHosts["de"] = server.URL
+	provider.detailURL = server.URL + "/books/"
+	queries := []domain.MetadataSearchQuery{
+		{Title: "Kollaps", Author: "Sean Oswald", Region: "de"},
+		{ASIN: "B012345678", Region: "de"},
+	}
+	for _, query := range queries {
+		results, err := provider.Search(context.Background(), query)
+		if err != nil || len(results) != 1 {
+			t.Fatalf("unexpected results for %#v: %#v, %v", query, results, err)
+		}
+		if results[0].Series != "Willkommen im Multiversum" || results[0].SeriesSequence != "3" {
+			t.Fatalf("catalog series was not applied: %#v", results[0])
+		}
 	}
 }
 

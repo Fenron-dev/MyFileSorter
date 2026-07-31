@@ -93,20 +93,20 @@ type googleIdentifier struct {
 func googleCandidate(item googleVolume) domain.MetadataCandidate {
 	info := item.VolumeInfo
 	candidate := domain.MetadataCandidate{
-		ID:            "google_books:" + item.ID,
+		ID:            "google_books:" + limitText(item.ID, 256),
 		Provider:      "google_books",
-		Title:         info.Title,
-		Subtitle:      info.Subtitle,
-		Author:        strings.Join(info.Authors, " & "),
-		Language:      info.Language,
-		Publisher:     info.Publisher,
+		Title:         limitText(info.Title, 500),
+		Subtitle:      limitText(info.Subtitle, 500),
+		Author:        limitText(strings.Join(info.Authors, " & "), 300),
+		Language:      limitText(info.Language, 64),
+		Publisher:     limitText(info.Publisher, 300),
 		PublishedYear: year(info.PublishedDate),
-		Description:   info.Description,
+		Description:   limitText(info.Description, 20000),
 		CoverURL:      secureURL(info.ImageLinks.Thumbnail),
 	}
 	for _, identifier := range info.IndustryIdentifiers {
 		if strings.HasPrefix(identifier.Type, "ISBN_") {
-			candidate.ISBN = identifier.Identifier
+			candidate.ISBN = limitText(compactID(identifier.Identifier), 32)
 			if identifier.Type == "ISBN_13" {
 				break
 			}
@@ -117,9 +117,13 @@ func googleCandidate(item googleVolume) domain.MetadataCandidate {
 
 func secureURL(value string) string {
 	if strings.HasPrefix(value, "http://") {
-		return "https://" + strings.TrimPrefix(value, "http://")
+		value = "https://" + strings.TrimPrefix(value, "http://")
 	}
-	return value
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil {
+		return ""
+	}
+	return parsed.String()
 }
 
 func year(value string) string {
