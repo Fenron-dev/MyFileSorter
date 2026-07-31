@@ -989,7 +989,6 @@ func (a *App) SearchOnlineWithQuery(id, provider string, query domain.MetadataSe
 	return a.searchOnline(ctx, id, provider, query, revision)
 }
 
-
 func (a *App) searchOnline(ctx context.Context, id, provider string, query domain.MetadataSearchQuery, revision uint64) ([]domain.MetadataCandidate, error) {
 	if err := validateSearchQuery(query); err != nil {
 		return nil, err
@@ -1390,13 +1389,13 @@ func applyProposalExecutionResults(proposals []domain.BookProposal, results []do
 func applyProposalExecutionResult(proposal *domain.BookProposal, result domain.ProposalExecutionResult, journalID string) {
 	proposal.ExecutionJournalID = journalID
 	switch result.Status {
-		case "completed":
+	case "completed":
 		proposal.Status = domain.StatusImported
 		clearExecutionWarning(proposal)
-		case "failed":
+	case "failed":
 		proposal.Status = domain.StatusError
 		proposal.Warnings = appendUnique(proposal.Warnings, "Import wurde unterbrochen. Nutze das Journal "+journalID+" für Undo.")
-		default:
+	default:
 		proposal.Status = domain.StatusConfirmed
 	}
 }

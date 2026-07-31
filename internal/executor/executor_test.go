@@ -648,17 +648,17 @@ func TestValidateJournalRejectsTargetOutsideRoot(t *testing.T) {
 	service := New(filepath.Join(root, "journals"))
 	id := "20260731T000000Z-001122334455"
 	journal := &Journal{
-		Version: journalVersion,
-		ID: id,
-		Status: "completed",
+		Version:    journalVersion,
+		ID:         id,
+		Status:     "completed",
 		TargetRoot: filepath.Join(root, "library"),
-		CreatedAt: service.now(),
-		UpdatedAt: service.now(),
+		CreatedAt:  service.now(),
+		UpdatedAt:  service.now(),
 		Operations: []JournalOperation{{
 			Action: "move",
 			Source: filepath.Join(root, "source", "book.m4b"),
 			Target: filepath.Join(root, "outside", "book.m4b"),
-			Size: 1,
+			Size:   1,
 			SHA256: strings.Repeat("0", 64),
 			Status: "completed",
 		}},
@@ -670,9 +670,9 @@ func TestValidateJournalRejectsTargetOutsideRoot(t *testing.T) {
 
 func TestResultFromJournalRebuildsProposalOutcomes(t *testing.T) {
 	journal := &Journal{
-		ID: "journal",
+		ID:     "journal",
 		Status: "failed",
-		Error: "transfer failed",
+		Error:  "transfer failed",
 		Operations: []JournalOperation{
 			{ProposalID: "first", Status: "completed", Size: 5},
 			{ProposalID: "first", Status: "completed", Size: 6},

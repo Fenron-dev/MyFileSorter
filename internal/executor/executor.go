@@ -50,7 +50,7 @@ type JournalOperation struct {
 	Target              string `json:"target"`
 	DuplicateOf         string `json:"duplicateOf,omitempty"`
 	Size                int64  `json:"size"`
-	SourceModifiedNanos int64 `json:"sourceModifiedNanos,omitempty"`
+	SourceModifiedNanos int64  `json:"sourceModifiedNanos,omitempty"`
 	SHA256              string `json:"sha256,omitempty"`
 
 	// SourceRetained records the safe copy-only fallback used when the target

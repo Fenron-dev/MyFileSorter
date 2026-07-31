@@ -3,9 +3,9 @@ package applog
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
-	"path/filepath"
 
 	"github.com/dennis/myfilesorter/internal/domain"
 )

@@ -28,10 +28,10 @@ var (
 )
 
 const (
-	maxMetadataWorkers = 4
-	maxScanIssueDetails = 20
-	maxAudioFiles       = 200_000
-	maxBookGroups       = 50_000
+	maxMetadataWorkers   = 4
+	maxScanIssueDetails  = 20
+	maxAudioFiles        = 200_000
+	maxBookGroups        = 50_000
 	maxDiscoveredEntries = 1_000_000
 	maxCompanionsPerBook = 50_000
 	maxResultFiles       = 1_000_000

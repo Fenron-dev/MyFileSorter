@@ -138,7 +138,7 @@ func newTestApp(t *testing.T, root string) *App {
 func newTestAppWithStores(root string, store *workspace.Store, service *executor.Service) *App {
 	return &App{
 		ctx: context.Background(), executor: service, workspace: store,
-		logger: applog.New(filepath.Join(root, "logs")),
+		logger:  applog.New(filepath.Join(root, "logs")),
 		matches: make(map[string]storedMatches), executed: make(map[string][]string),
 		aiResults: make(map[string]storedAISuggestion), plans: make(map[string]storedPlan),
 	}
@@ -157,6 +157,6 @@ func testProposal(t *testing.T, root string) domain.BookProposal {
 	return domain.BookProposal{
 		ID: "book", SourceRoot: source, GroupPath: source, Status: domain.StatusConfirmed, Confidence: 1,
 		Metadata: domain.BookMetadata{Title: "Titel", Author: "Autor", Evidence: map[string]domain.Evidence{}},
-		Files: []domain.AudioFile{{Path: path, Name: "book.m4b", Extension: ".m4b", Size: int64(len("audiobook")), Track: 1}},
+		Files:    []domain.AudioFile{{Path: path, Name: "book.m4b", Extension: ".m4b", Size: int64(len("audiobook")), Track: 1}},
 	}
 }

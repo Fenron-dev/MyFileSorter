@@ -123,14 +123,14 @@ type ScanProgress struct {
 }
 
 type PlannedOperation struct {
-	ProposalID string `json:"proposalId"`
-	Action     string `json:"action"`
-	Category   string `json:"category"`
-	SourceRoot string `json:"sourceRoot,omitempty"`
-	Source     string `json:"source"`
-	SourceModifiedNanos int64 `json:"sourceModifiedNanos,omitempty"`
-	Target     string `json:"target"`
-	Size       int64  `json:"size"`
+	ProposalID          string `json:"proposalId"`
+	Action              string `json:"action"`
+	Category            string `json:"category"`
+	SourceRoot          string `json:"sourceRoot,omitempty"`
+	Source              string `json:"source"`
+	SourceModifiedNanos int64  `json:"sourceModifiedNanos,omitempty"`
+	Target              string `json:"target"`
+	Size                int64  `json:"size"`
 }
 
 type PlanOptions struct {

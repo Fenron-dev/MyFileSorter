@@ -31,7 +31,7 @@ type profileRecord struct {
 	SecretStored bool             `json:"secretStored,omitempty"`
 	// EncryptedKey is retained only to migrate profiles created by versions
 	// that kept an application key next to the encrypted profile file.
-	EncryptedKey string           `json:"encryptedKey,omitempty"`
+	EncryptedKey string `json:"encryptedKey,omitempty"`
 }
 
 type Store struct {
