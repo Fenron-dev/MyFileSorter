@@ -11,9 +11,11 @@ import (
 	"testing"
 
 	"github.com/dennis/myfilesorter/internal/domain"
+	"github.com/zalando/go-keyring"
 )
 
-func TestStoreEncryptsAPIKeyAndReturnsOnlyKeyPresence(t *testing.T) {
+func TestStoreUsesKeyringAndReturnsOnlyKeyPresence(t *testing.T) {
+	keyring.MockInit()
 	directory := t.TempDir()
 	store := NewStore(directory)
 	profile, err := store.Save(domain.AIProfileInput{
@@ -39,6 +41,29 @@ func TestStoreEncryptsAPIKeyAndReturnsOnlyKeyPresence(t *testing.T) {
 	_, secret, err := store.profileWithSecret(profile.ID)
 	if err != nil || secret != "super-secret" {
 		t.Fatalf("secret roundtrip failed: %q, %v", secret, err)
+	}
+}
+
+func TestStoreCanRepairProfileAfterExternalKeychainDeletion(t *testing.T) {
+	keyring.MockInit()
+	store := NewStore(t.TempDir())
+	profile, err := store.Save(domain.AIProfileInput{
+		Name: "Remote", Provider: "openai", Model: "gpt-test", APIKey: "secret",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := keyring.Delete(keyringService, keyringAccount(profile.ID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Save(domain.AIProfileInput{
+		ID: profile.ID, Name: profile.Name, Provider: profile.Provider, BaseURL: profile.BaseURL,
+		Model: profile.Model, ClearAPIKey: true,
+	}); err != nil {
+		t.Fatalf("profile could not be repaired after missing keychain item: %v", err)
+	}
+	if err := store.Delete(profile.ID); err != nil {
+		t.Fatalf("repaired profile could not be deleted: %v", err)
 	}
 }
 

@@ -104,3 +104,12 @@ func getJSON(ctx context.Context, client *http.Client, url string, target interf
 	}
 	return nil
 }
+
+func limitText(value string, maximum int) string {
+	value = strings.TrimSpace(strings.ToValidUTF8(value, ""))
+	runes := []rune(value)
+	if len(runes) > maximum {
+		return string(runes[:maximum])
+	}
+	return value
+}

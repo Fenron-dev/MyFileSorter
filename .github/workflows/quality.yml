@@ -1,0 +1,65 @@
+name: Quality gate
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Format, vet, test and audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      GOFLAGS: -tags=webkit2_41
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Install Linux WebKit development libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: true
+          cache-dependency-path: |
+            go.mod
+            go.sum
+
+      - name: Download and verify dependencies
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Verify committed module lock files
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Check Go formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [[ -n "$unformatted" ]]; then
+            echo "The following files must be formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run tests with the race detector
+        run: go test -race -count=1 ./...
+
+      - name: Check frontend JavaScript syntax
+        run: node --check frontend/dist/app.js
+
+      - name: Scan Go dependencies and reachable code for vulnerabilities
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...

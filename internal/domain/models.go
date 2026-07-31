@@ -55,6 +55,8 @@ type AudioFile struct {
 	Size           int64            `json:"size"`
 	Track          int              `json:"track"`
 	Disc           int              `json:"disc"`
+	TargetTitle    string           `json:"targetTitle,omitempty"`
+	Excluded       bool             `json:"excluded,omitempty"`
 	Metadata       EmbeddedMetadata `json:"metadata"`
 	MetadataNotice string           `json:"metadataNotice,omitempty"`
 }
@@ -64,7 +66,16 @@ type CompanionKind string
 const (
 	CompanionEbook   CompanionKind = "ebook"
 	CompanionDiscard CompanionKind = "discard"
+	CompanionUnknown CompanionKind = "unknown"
 )
+
+type TrackUpdate struct {
+	Path        string `json:"path"`
+	TargetTitle string `json:"targetTitle,omitempty"`
+	Track       int    `json:"track"`
+	Disc        int    `json:"disc"`
+	Excluded    bool   `json:"excluded"`
+}
 
 type CompanionFile struct {
 	Path      string        `json:"path"`
@@ -75,15 +86,16 @@ type CompanionFile struct {
 }
 
 type BookProposal struct {
-	ID         string          `json:"id"`
-	SourceRoot string          `json:"sourceRoot"`
-	GroupPath  string          `json:"groupPath"`
-	Metadata   BookMetadata    `json:"metadata"`
-	Files      []AudioFile     `json:"files"`
-	Companions []CompanionFile `json:"companions,omitempty"`
-	Status     ProposalStatus  `json:"status"`
-	Confidence float64         `json:"confidence"`
-	Warnings   []string        `json:"warnings"`
+	ID                 string          `json:"id"`
+	SourceRoot         string          `json:"sourceRoot"`
+	GroupPath          string          `json:"groupPath"`
+	Metadata           BookMetadata    `json:"metadata"`
+	Files              []AudioFile     `json:"files"`
+	Companions         []CompanionFile `json:"companions,omitempty"`
+	Status             ProposalStatus  `json:"status"`
+	ExecutionJournalID string          `json:"executionJournalId,omitempty"`
+	Confidence         float64         `json:"confidence"`
+	Warnings           []string        `json:"warnings"`
 }
 
 type ScanSummary struct {
@@ -103,11 +115,20 @@ type ScanResult struct {
 	GlobalNotes []string       `json:"globalNotes"`
 }
 
+type ScanProgress struct {
+	Phase       string `json:"phase"`
+	Discovered  int    `json:"discovered"`
+	Inspected   int    `json:"inspected"`
+	CurrentPath string `json:"currentPath,omitempty"`
+}
+
 type PlannedOperation struct {
 	ProposalID string `json:"proposalId"`
 	Action     string `json:"action"`
 	Category   string `json:"category"`
+	SourceRoot string `json:"sourceRoot,omitempty"`
 	Source     string `json:"source"`
+	SourceModifiedNanos int64 `json:"sourceModifiedNanos,omitempty"`
 	Target     string `json:"target"`
 	Size       int64  `json:"size"`
 }
@@ -120,25 +141,50 @@ type PlanOptions struct {
 	BookNumberWidth  int    `json:"bookNumberWidth"`
 	TrackNumberWidth int    `json:"trackNumberWidth"`
 	AudioFileNaming  string `json:"audioFileNaming"`
+	// ExistingFilePolicy is empty/"error" for fail-closed planning or
+	// "skip_identical" to quarantine a source only after a verified SHA-256
+	// match with the existing target.
+	ExistingFilePolicy string `json:"existingFilePolicy,omitempty"`
 }
 
 type OperationPlan struct {
+	PlanID     string             `json:"planId"`
+	Revision   uint64             `json:"revision"`
+	Digest     string             `json:"digest"`
 	TargetRoot string             `json:"targetRoot"`
 	CreatedAt  time.Time          `json:"createdAt"`
+	ExpiresAt  time.Time          `json:"expiresAt"`
 	Operations []PlannedOperation `json:"operations"`
 	TotalBytes int64              `json:"totalBytes"`
 	Warnings   []string           `json:"warnings"`
 	Executable bool               `json:"executable"`
 }
 
+type ProposalExecutionResult struct {
+	ProposalID string `json:"proposalId"`
+	Status     string `json:"status"`
+	Completed  int    `json:"completed"`
+	Total      int    `json:"total"`
+	Error      string `json:"error,omitempty"`
+}
+
 type ExecutionResult struct {
-	JournalID  string   `json:"journalId"`
-	Status     string   `json:"status"`
-	Completed  int      `json:"completed"`
-	Total      int      `json:"total"`
-	TotalBytes int64    `json:"totalBytes"`
-	Error      string   `json:"error,omitempty"`
-	Warnings   []string `json:"warnings,omitempty"`
+	JournalID       string                    `json:"journalId"`
+	Status          string                    `json:"status"`
+	Completed       int                       `json:"completed"`
+	Total           int                       `json:"total"`
+	TotalBytes      int64                     `json:"totalBytes"`
+	Error           string                    `json:"error,omitempty"`
+	Warnings        []string                  `json:"warnings,omitempty"`
+	ProposalIDs     []string                  `json:"proposalIds,omitempty"`
+	ProposalResults []ProposalExecutionResult `json:"proposalResults,omitempty"`
+}
+
+type ActiveJob struct {
+	ID        string    `json:"id,omitempty"`
+	Kind      string    `json:"kind,omitempty"`
+	StartedAt time.Time `json:"startedAt,omitempty"`
+	Active    bool      `json:"active"`
 }
 
 type ExecutionProgress struct {
@@ -177,6 +223,13 @@ type LogSnapshot struct {
 	FilePath  string     `json:"filePath,omitempty"`
 	Warning   string     `json:"warning,omitempty"`
 	Entries   []LogEntry `json:"entries"`
+}
+
+type LogSessionInfo struct {
+	SessionID  string    `json:"sessionId"`
+	ModifiedAt time.Time `json:"modifiedAt"`
+	Size       int64     `json:"size"`
+	Current    bool      `json:"current"`
 }
 
 type MetadataSearchQuery struct {

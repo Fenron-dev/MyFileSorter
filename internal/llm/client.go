@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -188,6 +189,34 @@ func validateBaseURL(value string) error {
 	return nil
 }
 
+func validateEndpointSecurity(profile domain.AIProfile, hasSecret bool) error {
+	parsed, err := url.Parse(profile.BaseURL)
+	if err != nil {
+		return err
+	}
+	host := strings.ToLower(parsed.Hostname())
+	official := map[string]string{
+		"openai": "api.openai.com", "openrouter": "openrouter.ai", "groq": "api.groq.com",
+	}
+	if expected, found := official[profile.Provider]; found {
+		if parsed.Scheme != "https" || host != expected {
+			return fmt.Errorf("%s-Profile müssen den offiziellen HTTPS-Endpoint %s verwenden; für andere Hosts bitte OpenAI-kompatibel wählen", profile.Provider, expected)
+		}
+	}
+	if hasSecret && parsed.Scheme != "https" && !isLoopbackHost(host) {
+		return fmt.Errorf("API-Schlüssel dürfen über HTTP nur an einen lokalen Loopback-Endpoint gesendet werden")
+	}
+	return nil
+}
+
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(host, "[]"))
+	return ip != nil && ip.IsLoopback()
+}
+
 const systemPrompt = `Du erkennst Hörbuch-Metadaten ausschließlich aus den gelieferten lokalen Textinformationen. Erfinde keine Angaben. Leere oder unsichere Felder bleiben leer. Antworte ausschließlich als einzelnes JSON-Objekt mit title, author, series, seriesSequence, editionInfo, narrator, language, suggestedSearchTitle, suggestedSearchAuthor, confidence (0 bis 1) und reasoning. Editionshinweise wie Ungekürzt gehören nur in editionInfo, nicht in title. Eine Nummer nach einem Serientitel ist normalerweise die Bandnummer.`
 
 func analysisPrompt(proposal domain.BookProposal) (string, error) {
@@ -233,6 +262,21 @@ func parseSuggestion(content string) (domain.AISuggestion, error) {
 	suggestion.Author = strings.TrimSpace(suggestion.Author)
 	if suggestion.Title == "" || suggestion.Author == "" {
 		return domain.AISuggestion{}, fmt.Errorf("AI-Vorschlag enthält keinen vollständigen Titel und Autor")
+	}
+	fields := []struct {
+		label   string
+		value   string
+		maximum int
+	}{
+		{"Titel", suggestion.Title, 500}, {"Autor", suggestion.Author, 300}, {"Serie", suggestion.Series, 300},
+		{"Band", suggestion.SeriesSequence, 32}, {"Info", suggestion.EditionInfo, 300}, {"Sprecher", suggestion.Narrator, 300},
+		{"Sprache", suggestion.Language, 64}, {"Suchttitel", suggestion.SuggestedSearchTitle, 500},
+		{"Suchautor", suggestion.SuggestedSearchAuthor, 300}, {"Begründung", suggestion.Reasoning, 4000},
+	}
+	for _, field := range fields {
+		if len([]rune(field.value)) > field.maximum || strings.ContainsRune(field.value, '\x00') {
+			return domain.AISuggestion{}, fmt.Errorf("AI-Feld %s ist ungültig oder zu lang", field.label)
+		}
 	}
 	if suggestion.Confidence < 0 {
 		suggestion.Confidence = 0

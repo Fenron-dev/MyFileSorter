@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dennis/myfilesorter/internal/domain"
@@ -22,6 +24,17 @@ var (
 	trackPrefix     = regexp.MustCompile(`^\s*(?:cd|disc|disk|track|part|teil)?\s*\d{1,4}(?:[._ -]+)`)
 	trackNumber     = regexp.MustCompile(`(?i)^\s*(?:cd|disc|disk|track|part|teil)?\s*(\d{1,4})(?:[._ -]+)`)
 	seriesPrefix    = regexp.MustCompile(`^\s*(\d+(?:[.,]\d+)?)\s*[-._]\s*(.+)$`)
+	discDirectory   = regexp.MustCompile(`(?i)^\s*(?:cd|disc|disk)\s*[-_. ]*(\d{1,3})(?:\s*(?:of|von)\s*\d{1,3})?\s*$`)
+)
+
+const (
+	maxMetadataWorkers = 4
+	maxScanIssueDetails = 20
+	maxAudioFiles       = 200_000
+	maxBookGroups       = 50_000
+	maxDiscoveredEntries = 1_000_000
+	maxCompanionsPerBook = 50_000
+	maxResultFiles       = 1_000_000
 )
 
 var audioExtensions = map[string]struct{}{
@@ -38,19 +51,63 @@ var discardExtensions = map[string]struct{}{
 
 type Scanner struct {
 	metadata metadata.Reader
+	scanMu   sync.Mutex
+	cacheMu  sync.RWMutex
+	cache    map[string]metadataCacheEntry
+}
+
+type metadataCacheEntry struct {
+	Size           int64
+	ModifiedNanos  int64
+	Metadata       domain.EmbeddedMetadata
+	MetadataNotice string
+}
+
+type audioScanResult struct {
+	File domain.AudioFile
+	Err  error
+}
+
+type audioScanTask struct {
+	GroupIndex int
+	FileIndex  int
+	Path       string
+}
+
+type issueCollector struct {
+	limit    int
+	total    int
+	messages []string
 }
 
 func New(reader metadata.Reader) *Scanner {
 	if reader == nil {
 		reader = metadata.NoopReader{}
 	}
-	return &Scanner{metadata: reader}
+	return &Scanner{metadata: reader, cache: make(map[string]metadataCacheEntry)}
 }
 
 func (s *Scanner) Scan(ctx context.Context, source string) (domain.ScanResult, error) {
+	return s.ScanWithProgress(ctx, source, nil)
+}
+
+func (s *Scanner) ScanWithProgress(ctx context.Context, source string, progress func(domain.ScanProgress)) (domain.ScanResult, error) {
+	s.scanMu.Lock()
+	defer s.scanMu.Unlock()
+
+	if strings.TrimSpace(source) == "" {
+		return domain.ScanResult{}, fmt.Errorf("source is required")
+	}
 	root, err := filepath.Abs(filepath.Clean(source))
 	if err != nil {
 		return domain.ScanResult{}, fmt.Errorf("resolve source: %w", err)
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return domain.ScanResult{}, fmt.Errorf("resolve physical source: %w", err)
+	}
+	if isFilesystemRoot(root) {
+		return domain.ScanResult{}, fmt.Errorf("filesystem root cannot be used as scan source")
 	}
 	info, err := os.Stat(root)
 	if err != nil {
@@ -61,12 +118,23 @@ func (s *Scanner) Scan(ctx context.Context, source string) (domain.ScanResult, e
 	}
 
 	groups := make(map[string][]string)
+	audioFileCount := 0
+	discoveredEntries := 0
+	issues := issueCollector{limit: maxScanIssueDetails}
 	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			return walkErr
+			issues.Add(fmt.Sprintf("Pfad beim Scan übersprungen: %s: %v", path, walkErr))
+			if entry != nil && entry.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
+		}
+		discoveredEntries++
+		if discoveredEntries > maxDiscoveredEntries {
+			return fmt.Errorf("scan contains more than %d filesystem entries", maxDiscoveredEntries)
 		}
 		if entry.IsDir() {
 			return nil
@@ -77,32 +145,71 @@ func (s *Scanner) Scan(ctx context.Context, source string) (domain.ScanResult, e
 		if _, ok := audioExtensions[strings.ToLower(filepath.Ext(entry.Name()))]; !ok {
 			return nil
 		}
-		parent := filepath.Dir(path)
-		key := parent
-		if samePath(parent, root) {
-			key = path
+		key := logicalGroupPath(root, path)
+		audioFileCount++
+		if audioFileCount > maxAudioFiles {
+			return fmt.Errorf("scan contains more than %d audio files", maxAudioFiles)
+		}
+		if _, found := groups[key]; !found && len(groups) >= maxBookGroups {
+			return fmt.Errorf("scan contains more than %d audiobook groups", maxBookGroups)
 		}
 		groups[key] = append(groups[key], path)
+		if progress != nil && (audioFileCount == 1 || audioFileCount%25 == 0) {
+			progress(domain.ScanProgress{Phase: "discovering", Discovered: audioFileCount, CurrentPath: path})
+		}
 		return nil
 	})
 	if err != nil {
+		if ctx.Err() != nil {
+			return domain.ScanResult{}, ctx.Err()
+		}
 		return domain.ScanResult{}, fmt.Errorf("scan source: %w", err)
 	}
 
 	keys := make([]string, 0, len(groups))
 	for key := range groups {
+		sort.Strings(groups[key])
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	scannedFiles, err := s.scanAudioFilesWithProgress(ctx, keys, groups, progress)
+	if err != nil {
+		return domain.ScanResult{}, err
+	}
+	s.pruneMetadataCache(groups)
 
 	result := domain.ScanResult{Source: root, ScannedAt: time.Now(), Summary: domain.ScanSummary{MetadataAvailable: s.metadata.Available()}}
 	if !s.metadata.Available() {
 		result.GlobalNotes = append(result.GlobalNotes, "ffprobe wurde nicht gefunden; Vorschläge basieren nur auf Datei- und Ordnernamen.")
 	}
-	for _, key := range keys {
-		proposal, buildErr := s.buildProposal(ctx, root, key, groups[key])
+	resultFileCount := 0
+	for groupIndex, key := range keys {
+		files := make([]domain.AudioFile, 0, len(scannedFiles[groupIndex]))
+		groupIssues := issueCollector{limit: 4}
+		for _, scanned := range scannedFiles[groupIndex] {
+			if scanned.Err != nil {
+				message := fmt.Sprintf("Audiodatei übersprungen: %s: %v", scanned.File.Path, scanned.Err)
+				issues.Add(message)
+				groupIssues.Add(message)
+				continue
+			}
+			files = append(files, scanned.File)
+		}
+		if len(files) == 0 {
+			issues.Add("Hörbuchgruppe ohne lesbare Audiodateien übersprungen: " + key)
+			continue
+		}
+		proposal, buildErr := s.buildProposal(ctx, root, key, files, groupIssues.Notes())
 		if buildErr != nil {
-			return domain.ScanResult{}, buildErr
+			if ctx.Err() != nil {
+				return domain.ScanResult{}, ctx.Err()
+			}
+			issues.Add(fmt.Sprintf("Hörbuchgruppe übersprungen: %s: %v", key, buildErr))
+			continue
+		}
+		resultFileCount += len(proposal.Files) + len(proposal.Companions)
+		if resultFileCount > maxResultFiles {
+			return domain.ScanResult{}, fmt.Errorf("scan result contains more than %d files", maxResultFiles)
 		}
 		result.Proposals = append(result.Proposals, proposal)
 		result.Summary.Books++
@@ -118,37 +225,194 @@ func (s *Scanner) Scan(ctx context.Context, source string) (domain.ScanResult, e
 			}
 		}
 	}
+	result.GlobalNotes = append(result.GlobalNotes, issues.Notes()...)
+	if progress != nil {
+		progress(domain.ScanProgress{Phase: "completed", Discovered: audioFileCount, Inspected: audioFileCount})
+	}
 	return result, nil
 }
 
-func (s *Scanner) buildProposal(ctx context.Context, root, groupPath string, paths []string) (domain.BookProposal, error) {
-	sort.Strings(paths)
-	files := make([]domain.AudioFile, 0, len(paths))
-	for _, path := range paths {
-		info, err := os.Stat(path)
-		if err != nil {
-			return domain.BookProposal{}, fmt.Errorf("stat audio file: %w", err)
-		}
-		file := domain.AudioFile{
-			Path:      path,
-			Name:      filepath.Base(path),
-			Extension: strings.ToLower(filepath.Ext(path)),
-			Size:      info.Size(),
-		}
-		if s.metadata.Available() {
-			file.Metadata, err = s.metadata.Read(ctx, path)
-			if err != nil {
-				file.MetadataNotice = err.Error()
-			}
-		}
-		file.Track = file.Metadata.Track
-		file.Disc = file.Metadata.Disc
-		if file.Track <= 0 {
-			file.Track = trackNumberFromName(file.Name)
-		}
-		files = append(files, file)
+func (s *Scanner) scanAudioFiles(ctx context.Context, keys []string, groups map[string][]string) ([][]audioScanResult, error) {
+	return s.scanAudioFilesWithProgress(ctx, keys, groups, nil)
+}
+
+func (s *Scanner) scanAudioFilesWithProgress(ctx context.Context, keys []string, groups map[string][]string, progress func(domain.ScanProgress)) ([][]audioScanResult, error) {
+	results := make([][]audioScanResult, len(keys))
+	totalFiles := 0
+	for groupIndex, key := range keys {
+		results[groupIndex] = make([]audioScanResult, len(groups[key]))
+		totalFiles += len(groups[key])
+	}
+	if totalFiles == 0 {
+		return results, nil
 	}
 
+	workerCount := min(maxMetadataWorkers, totalFiles)
+	tasks := make(chan audioScanTask)
+	var inspected atomic.Int64
+	var workers sync.WaitGroup
+	workers.Add(workerCount)
+	for worker := 0; worker < workerCount; worker++ {
+		go func() {
+			defer workers.Done()
+			for task := range tasks {
+				file, err := s.inspectAudioFile(ctx, task.Path)
+				if err != nil {
+					s.forgetMetadata(task.Path)
+				}
+				results[task.GroupIndex][task.FileIndex] = audioScanResult{File: file, Err: err}
+				completed := int(inspected.Add(1))
+				if progress != nil && (completed == 1 || completed%10 == 0 || completed == totalFiles) {
+					progress(domain.ScanProgress{Phase: "inspecting", Discovered: totalFiles, Inspected: completed, CurrentPath: task.Path})
+				}
+			}
+		}()
+	}
+
+	for groupIndex, key := range keys {
+		for fileIndex, path := range groups[key] {
+			select {
+			case <-ctx.Done():
+				close(tasks)
+				workers.Wait()
+				return nil, ctx.Err()
+			case tasks <- audioScanTask{GroupIndex: groupIndex, FileIndex: fileIndex, Path: path}:
+			}
+		}
+	}
+	close(tasks)
+	workers.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return results, nil
+}
+
+func (s *Scanner) inspectAudioFile(ctx context.Context, path string) (domain.AudioFile, error) {
+	file := domain.AudioFile{
+		Path:      path,
+		Name:      filepath.Base(path),
+		Extension: strings.ToLower(filepath.Ext(path)),
+	}
+	info, err := os.Lstat(path)
+	if err != nil {
+		return file, fmt.Errorf("Audiodatei prüfen: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return file, fmt.Errorf("Audiodatei ist keine reguläre Datei")
+	}
+	file.Size = info.Size()
+	handle, err := os.Open(path)
+	if err != nil {
+		return file, fmt.Errorf("Audiodatei öffnen: %w", err)
+	}
+	openedInfo, statErr := handle.Stat()
+	if statErr != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(info, openedInfo) {
+		handle.Close()
+		return file, fmt.Errorf("Audiodatei wurde während des Scans verändert")
+	}
+	if err := handle.Close(); err != nil {
+		return file, fmt.Errorf("Audiodatei schließen: %w", err)
+	}
+	if s.metadata.Available() {
+		file.Metadata, file.MetadataNotice, err = s.readMetadata(ctx, path, info)
+		if err != nil {
+			return file, err
+		}
+	}
+	file.Track = file.Metadata.Track
+	file.Disc = file.Metadata.Disc
+	if file.Track <= 0 {
+		file.Track = trackNumberFromName(file.Name)
+	}
+	return file, nil
+}
+
+func (s *Scanner) readMetadata(ctx context.Context, path string, info os.FileInfo) (domain.EmbeddedMetadata, string, error) {
+	key := filepath.Clean(path)
+	modified := info.ModTime().UnixNano()
+	s.cacheMu.RLock()
+	cached, found := s.cache[key]
+	s.cacheMu.RUnlock()
+	if found && cached.Size == info.Size() && cached.ModifiedNanos == modified {
+		return cached.Metadata, cached.MetadataNotice, nil
+	}
+
+	value, err := s.metadata.Read(ctx, path)
+	if ctx.Err() != nil {
+		return domain.EmbeddedMetadata{}, "", ctx.Err()
+	}
+	notice := ""
+	if err != nil {
+		notice = err.Error()
+		value = domain.EmbeddedMetadata{}
+	}
+	s.cacheMu.Lock()
+	s.cache[key] = metadataCacheEntry{
+		Size: info.Size(), ModifiedNanos: modified, Metadata: value, MetadataNotice: notice,
+	}
+	s.cacheMu.Unlock()
+	return value, notice, nil
+}
+
+func (s *Scanner) pruneMetadataCache(groups map[string][]string) {
+	seen := make(map[string]struct{})
+	for _, paths := range groups {
+		for _, path := range paths {
+			seen[filepath.Clean(path)] = struct{}{}
+		}
+	}
+	s.cacheMu.Lock()
+	for path := range s.cache {
+		if _, found := seen[path]; !found {
+			delete(s.cache, path)
+		}
+	}
+	s.cacheMu.Unlock()
+}
+
+func (s *Scanner) forgetMetadata(path string) {
+	s.cacheMu.Lock()
+	delete(s.cache, filepath.Clean(path))
+	s.cacheMu.Unlock()
+}
+
+func (c *issueCollector) Add(message string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return
+	}
+	c.total++
+	if len(c.messages) < c.limit {
+		c.messages = append(c.messages, message)
+	}
+}
+
+func (c issueCollector) Notes() []string {
+	result := append([]string(nil), c.messages...)
+	if hidden := c.total - len(c.messages); hidden > 0 {
+		result = append(result, fmt.Sprintf("Weitere %d Scanproblem(e) wurden zusammengefasst.", hidden))
+	}
+	return result
+}
+
+func (s *Scanner) buildProposal(ctx context.Context, root, groupPath string, files []domain.AudioFile, initialWarnings []string) (domain.BookProposal, error) {
+	paths := make([]string, len(files))
+	metadataFailures := 0
+	metadataFailureExample := ""
+	for index := range files {
+		paths[index] = files[index].Path
+		if files[index].Disc <= 0 {
+			files[index].Disc = discNumberForPath(groupPath, files[index].Path)
+		}
+		if files[index].MetadataNotice != "" {
+			metadataFailures++
+			if metadataFailureExample == "" {
+				metadataFailureExample = fmt.Sprintf("%s: %s", files[index].Name, files[index].MetadataNotice)
+			}
+		}
+	}
+	sort.Strings(paths)
 	sort.SliceStable(files, func(i, j int) bool {
 		left, right := files[i], files[j]
 		if left.Disc != right.Disc && (left.Disc > 0 || right.Disc > 0) {
@@ -166,15 +430,23 @@ func (s *Scanner) buildProposal(ctx context.Context, root, groupPath string, pat
 		GroupPath:  groupPath,
 		Files:      files,
 		Status:     domain.StatusReviewRequired,
+		Warnings:   append([]string(nil), initialWarnings...),
 		Metadata: domain.BookMetadata{
 			Evidence: make(map[string]domain.Evidence),
 		},
 	}
-	companions, companionErr := scanCompanions(groupPath, files)
+	if metadataFailures > 0 {
+		proposal.Warnings = append(proposal.Warnings, fmt.Sprintf(
+			"Eingebettete Metadaten konnten für %d Datei(en) nicht gelesen werden; Datei- und Ordnernamen werden weiterhin verwendet. Beispiel: %s",
+			metadataFailures, metadataFailureExample,
+		))
+	}
+	companions, companionWarnings, companionErr := scanCompanions(ctx, groupPath, files)
 	if companionErr != nil {
 		return domain.BookProposal{}, companionErr
 	}
 	proposal.Companions = companions
+	proposal.Warnings = append(proposal.Warnings, companionWarnings...)
 	folder := inferFolderMetadata(root, groupPath, files)
 	proposal.Metadata.Title, proposal.Metadata.Evidence["title"] = inferTitle(root, groupPath, files, folder)
 	proposal.Metadata.Author, proposal.Metadata.Evidence["author"] = inferAuthor(files, folder)
@@ -232,45 +504,127 @@ func trackNumberFromName(name string) int {
 	return value
 }
 
-func scanCompanions(groupPath string, audioFiles []domain.AudioFile) ([]domain.CompanionFile, error) {
+func logicalGroupPath(root, audioPath string) string {
+	parent := filepath.Dir(audioPath)
+	for directory := parent; !samePath(directory, root); directory = filepath.Dir(directory) {
+		if _, found := discNumberFromDirectory(filepath.Base(directory)); found {
+			return filepath.Dir(directory)
+		}
+		next := filepath.Dir(directory)
+		if next == directory {
+			break
+		}
+	}
+	if samePath(parent, root) {
+		return audioPath
+	}
+	return parent
+}
+
+func discNumberForPath(groupPath, audioPath string) int {
+	for directory := filepath.Dir(audioPath); !samePath(directory, groupPath); directory = filepath.Dir(directory) {
+		if number, found := discNumberFromDirectory(filepath.Base(directory)); found {
+			return number
+		}
+		next := filepath.Dir(directory)
+		if next == directory {
+			break
+		}
+	}
+	return 0
+}
+
+func discNumberFromDirectory(name string) (int, bool) {
+	match := discDirectory.FindStringSubmatch(name)
+	if len(match) != 2 {
+		return 0, false
+	}
+	number, err := strconv.Atoi(match[1])
+	return number, err == nil && number > 0
+}
+
+func isFilesystemRoot(path string) bool {
+	clean := filepath.Clean(path)
+	return filepath.Dir(clean) == clean
+}
+
+func scanCompanions(ctx context.Context, groupPath string, audioFiles []domain.AudioFile) ([]domain.CompanionFile, []string, error) {
 	if len(audioFiles) == 1 && samePath(groupPath, audioFiles[0].Path) {
-		return nil, nil
+		return nil, nil, nil
 	}
 	audioPaths := make(map[string]bool, len(audioFiles))
+	directories := map[string]struct{}{filepath.Clean(groupPath): {}}
 	for _, file := range audioFiles {
 		audioPaths[filepath.Clean(file.Path)] = true
+		directories[filepath.Clean(filepath.Dir(file.Path))] = struct{}{}
 	}
-	entries, err := os.ReadDir(groupPath)
-	if err != nil {
-		return nil, fmt.Errorf("scan companion files: %w", err)
+	directoryNames := make([]string, 0, len(directories))
+	for directory := range directories {
+		directoryNames = append(directoryNames, directory)
 	}
+	sort.Strings(directoryNames)
+
 	companions := make([]domain.CompanionFile, 0)
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			continue
+	warnings := issueCollector{limit: 4}
+	seen := make(map[string]bool)
+	unknown := 0
+	for _, directory := range directoryNames {
+		if err := ctx.Err(); err != nil {
+			return nil, warnings.Notes(), err
 		}
-		path := filepath.Join(groupPath, entry.Name())
-		if audioPaths[filepath.Clean(path)] {
-			continue
-		}
-		extension := strings.ToLower(filepath.Ext(entry.Name()))
-		kind := domain.CompanionKind("")
-		if _, found := ebookExtensions[extension]; found {
-			kind = domain.CompanionEbook
-		} else if _, found := discardExtensions[extension]; found {
-			kind = domain.CompanionDiscard
-		}
-		if kind == "" {
-			continue
-		}
-		info, err := entry.Info()
+		entries, err := os.ReadDir(directory)
 		if err != nil {
-			return nil, fmt.Errorf("stat companion file: %w", err)
+			warnings.Add(fmt.Sprintf("Begleitdateien konnten nicht gelesen werden: %s: %v", directory, err))
+			continue
 		}
-		companions = append(companions, domain.CompanionFile{
-			Path: path, Name: entry.Name(), Extension: extension, Size: info.Size(), Kind: kind,
-		})
+		for _, entry := range entries {
+			if err := ctx.Err(); err != nil {
+				return nil, warnings.Notes(), err
+			}
+			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
+				continue
+			}
+			path := filepath.Join(directory, entry.Name())
+			cleanedPath := filepath.Clean(path)
+			if audioPaths[cleanedPath] || seen[cleanedPath] {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				warnings.Add(fmt.Sprintf("Begleitdatei übersprungen: %s: %v", path, err))
+				continue
+			}
+			if !info.Mode().IsRegular() {
+				continue
+			}
+			extension := strings.ToLower(filepath.Ext(entry.Name()))
+			kind := domain.CompanionUnknown
+			if _, found := ebookExtensions[extension]; found {
+				kind = domain.CompanionEbook
+			} else if _, found := discardExtensions[extension]; found {
+				kind = domain.CompanionDiscard
+			} else {
+				unknown++
+			}
+			seen[cleanedPath] = true
+			companions = append(companions, domain.CompanionFile{
+				Path: path, Name: entry.Name(), Extension: extension, Size: info.Size(), Kind: kind,
+			})
+			if len(companions) > maxCompanionsPerBook {
+				return nil, warnings.Notes(), fmt.Errorf("Hörbuchgruppe enthält mehr als %d Begleitdateien", maxCompanionsPerBook)
+			}
+		}
 	}
-	sort.Slice(companions, func(left, right int) bool { return naturalLess(companions[left].Name, companions[right].Name) })
-	return companions, nil
+	if unknown > 0 {
+		warnings.Add(fmt.Sprintf(
+			"%d nicht klassifizierte Begleitdatei(en) werden angezeigt, aber weder verschoben noch entfernt.", unknown,
+		))
+	}
+	sort.Slice(companions, func(left, right int) bool {
+		if companions[left].Name == companions[right].Name {
+			return companions[left].Path < companions[right].Path
+		}
+		return naturalLess(companions[left].Name, companions[right].Name)
+	})
+	return companions, warnings.Notes(), nil
 }

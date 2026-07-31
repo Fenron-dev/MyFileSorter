@@ -169,6 +169,7 @@ type audibleBook struct {
 }
 
 func audibleCandidate(item audibleBook) domain.MetadataCandidate {
+	asin := limitText(strings.ToUpper(compactID(item.ASIN)), 32)
 	authors := make([]string, 0, len(item.Authors))
 	for _, author := range item.Authors {
 		authors = append(authors, author.Name)
@@ -178,24 +179,24 @@ func audibleCandidate(item audibleBook) domain.MetadataCandidate {
 		narrators = append(narrators, narrator.Name)
 	}
 	candidate := domain.MetadataCandidate{
-		ID:              "audible:" + item.ASIN,
+		ID:              "audible:" + asin,
 		Provider:        "audible",
-		Title:           item.Title,
-		Subtitle:        item.Subtitle,
-		Author:          strings.Join(authors, " & "),
-		Narrator:        strings.Join(narrators, " & "),
-		Language:        item.Language,
-		ASIN:            item.ASIN,
-		ISBN:            item.ISBN,
-		Publisher:       item.PublisherName,
+		Title:           limitText(item.Title, 500),
+		Subtitle:        limitText(item.Subtitle, 500),
+		Author:          limitText(strings.Join(authors, " & "), 300),
+		Narrator:        limitText(strings.Join(narrators, " & "), 300),
+		Language:        limitText(item.Language, 64),
+		ASIN:            asin,
+		ISBN:            limitText(compactID(item.ISBN), 32),
+		Publisher:       limitText(item.PublisherName, 300),
 		PublishedYear:   year(item.ReleaseDate),
-		Description:     item.Summary,
+		Description:     limitText(item.Summary, 20000),
 		CoverURL:        secureURL(item.Image),
 		DurationMinutes: item.RuntimeLengthMin,
 	}
 	if item.SeriesPrimary != nil {
-		candidate.Series = cleanSeriesName(item.SeriesPrimary.Name)
-		candidate.SeriesSequence = cleanSequence(item.SeriesPrimary.Position)
+		candidate.Series = limitText(cleanSeriesName(item.SeriesPrimary.Name), 300)
+		candidate.SeriesSequence = limitText(cleanSequence(item.SeriesPrimary.Position), 32)
 	}
 	return candidate
 }
@@ -215,10 +216,10 @@ func applyCatalogSeries(candidate *domain.MetadataCandidate, product audibleCata
 	}
 	primary := product.Series[0]
 	if strings.TrimSpace(candidate.Series) == "" {
-		candidate.Series = cleanSeriesName(primary.Title)
+		candidate.Series = limitText(cleanSeriesName(primary.Title), 300)
 	}
 	if strings.TrimSpace(candidate.SeriesSequence) == "" {
-		candidate.SeriesSequence = cleanSequence(primary.Sequence)
+		candidate.SeriesSequence = limitText(cleanSequence(primary.Sequence), 32)
 	}
 }
 

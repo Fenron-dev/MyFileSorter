@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"path/filepath"
 
 	"github.com/dennis/myfilesorter/internal/domain"
 )
@@ -32,5 +33,23 @@ func TestLoggerKeepsSessionEntriesAndWritesJSONLines(t *testing.T) {
 	}
 	if entry.Level != "error" || entry.Details["error"] != "test" {
 		t.Fatalf("unexpected entry: %#v", entry)
+	}
+}
+
+func TestLoggerRejectsSymlinkDirectory(t *testing.T) {
+	root := t.TempDir()
+	realDirectory := filepath.Join(root, "real")
+	if err := os.Mkdir(realDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "logs")
+	if err := os.Symlink(realDirectory, link); err != nil {
+		t.Skipf("symlinks are unavailable: %v", err)
+	}
+	logger := New(link)
+	logger.Info("test", "keine Dateiausgabe", nil)
+	snapshot := logger.Snapshot()
+	if snapshot.Warning == "" || snapshot.FilePath != "" {
+		t.Fatalf("expected insecure log directory to be rejected: %#v", snapshot)
 	}
 }

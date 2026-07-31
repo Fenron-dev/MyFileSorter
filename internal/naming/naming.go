@@ -1,6 +1,8 @@
 package naming
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -9,11 +11,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/dennis/myfilesorter/internal/domain"
+	"golang.org/x/text/unicode/norm"
 )
 
 var (
 	invalidChars = regexp.MustCompile(`[<>:"/\\|?*\x00-\x1F]`)
 	spaces       = regexp.MustCompile(`\s+`)
+	trackPrefix  = regexp.MustCompile(`^\s*(\d+)(?:\s*[-._]+\s*|\s+)(.*)$`)
+	numericName  = regexp.MustCompile(`^\s*(\d+)\s*$`)
 	reserved     = map[string]struct{}{
 		"con": {}, "prn": {}, "aux": {}, "nul": {},
 		"com1": {}, "com2": {}, "com3": {}, "com4": {}, "com5": {}, "com6": {}, "com7": {}, "com8": {}, "com9": {},
@@ -67,12 +72,19 @@ func SourceTrackName(file domain.AudioFile, fallbackIndex, total, width int) str
 	}
 	base := strings.TrimSuffix(file.Name, filepath.Ext(file.Name))
 	track := file.Track
-	prefix := regexp.MustCompile(`^\s*(\d+)\s*(?:[-._]+\s*)?(.*)$`)
-	if match := prefix.FindStringSubmatch(base); len(match) == 3 {
-		if parsed, err := strconv.Atoi(match[1]); err == nil && track <= 0 {
-			track = parsed
+	match := trackPrefix.FindStringSubmatch(base)
+	if len(match) == 0 {
+		if numeric := numericName.FindStringSubmatch(base); len(numeric) == 2 {
+			match = []string{numeric[0], numeric[1], ""}
 		}
-		base = match[2]
+	}
+	if len(match) == 3 {
+		if parsed, err := strconv.Atoi(match[1]); err == nil && plausibleTrackPrefix(parsed, track, fallbackIndex, total) {
+			if track <= 0 {
+				track = parsed
+			}
+			base = match[2]
+		}
 	}
 	if track <= 0 {
 		track = fallbackIndex
@@ -86,6 +98,10 @@ func SourceTrackName(file domain.AudioFile, fallbackIndex, total, width int) str
 	return TrackNameWithWidth(track, total, base, extension, width)
 }
 
+func plausibleTrackPrefix(parsed, track, fallbackIndex, total int) bool {
+	return parsed > 0 && (parsed == track || parsed == fallbackIndex || (total > 1 && parsed <= total))
+}
+
 func resolvedTrackWidth(width, total, index int) int {
 	if width == 0 {
 		width = 2
@@ -94,6 +110,9 @@ func resolvedTrackWidth(width, total, index int) int {
 	}
 	if width < 1 {
 		return 1
+	}
+	if width > 6 {
+		width = 6
 	}
 	if digits := len(strconv.Itoa(index)); digits > width {
 		return digits
@@ -114,20 +133,43 @@ func EbookName(index, total int, title, extension string) string {
 
 func Segment(value string) string {
 	value = strings.ToValidUTF8(value, "")
+	value = norm.NFC.String(value)
 	value = invalidChars.ReplaceAllString(value, "-")
 	value = spaces.ReplaceAllString(strings.TrimSpace(value), " ")
 	value = strings.Trim(value, ". ")
 	if value == "" {
 		return ""
 	}
-	base := strings.ToLower(strings.TrimSuffix(value, filepath.Ext(value)))
+	// Windows reserves a device name even when it has one or more suffixes
+	// (for example CON.txt or CON.backup.txt). Only the segment before the
+	// first dot is relevant for this check.
+	base := strings.ToLower(value)
+	if dot := strings.IndexByte(base, '.'); dot >= 0 {
+		base = base[:dot]
+	}
 	if _, found := reserved[base]; found {
 		value = "_" + value
 	}
-	const maxRunes = 120
-	if utf8.RuneCountInString(value) > maxRunes {
-		runes := []rune(value)
-		value = strings.TrimSpace(string(runes[:maxRunes]))
+	const (
+		maxRunes = 120
+		maxBytes = 180
+	)
+	if utf8.RuneCountInString(value) > maxRunes || len(value) > maxBytes {
+		digest := sha256.Sum256([]byte(value))
+		suffix := "~" + hex.EncodeToString(digest[:4])
+		limitBytes := maxBytes - len(suffix)
+		limitRunes := maxRunes - utf8.RuneCountInString(suffix)
+		var builder strings.Builder
+		count := 0
+		for _, character := range value {
+			encoded := string(character)
+			if count >= limitRunes || builder.Len()+len(encoded) > limitBytes {
+				break
+			}
+			builder.WriteString(encoded)
+			count++
+		}
+		value = strings.Trim(strings.TrimSpace(builder.String()), ". ") + suffix
 	}
 	return value
 }
@@ -145,6 +187,9 @@ func SequenceWithWidth(value string, width int) string {
 	}
 	if width < 1 {
 		width = 1
+	}
+	if width > 6 {
+		return ""
 	}
 	result := fmt.Sprintf("%0*d", width, whole)
 	if len(parts) == 2 {

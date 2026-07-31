@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,10 +16,21 @@ import (
 	"sync"
 
 	"github.com/dennis/myfilesorter/internal/domain"
+	"github.com/zalando/go-keyring"
+)
+
+const keyringService = "MyFileSorter"
+
+const (
+	maxProfileFileBytes = 4 << 20
+	maxProfiles         = 100
 )
 
 type profileRecord struct {
 	Profile      domain.AIProfile `json:"profile"`
+	SecretStored bool             `json:"secretStored,omitempty"`
+	// EncryptedKey is retained only to migrate profiles created by versions
+	// that kept an application key next to the encrypted profile file.
 	EncryptedKey string           `json:"encryptedKey,omitempty"`
 }
 
@@ -48,6 +60,15 @@ func NewStore(directory string) *Store {
 		store.initErr = fmt.Errorf("AI-Profilordner anlegen: %w", err)
 		return store
 	}
+	info, err := os.Lstat(directory)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		store.initErr = fmt.Errorf("AI-Profilordner ist kein sicheres Verzeichnis")
+		return store
+	}
+	if err := os.Chmod(directory, 0o700); err != nil {
+		store.initErr = fmt.Errorf("AI-Profilordner absichern: %w", err)
+		return store
+	}
 	if err := store.load(); err != nil {
 		store.initErr = err
 	}
@@ -63,7 +84,7 @@ func (s *Store) List() ([]domain.AIProfile, error) {
 	result := make([]domain.AIProfile, 0, len(s.records))
 	for _, record := range s.records {
 		profile := record.Profile
-		profile.HasAPIKey = record.EncryptedKey != ""
+		profile.HasAPIKey = record.SecretStored || record.EncryptedKey != ""
 		result = append(result, profile)
 	}
 	sort.Slice(result, func(i, j int) bool {
@@ -91,15 +112,43 @@ func (s *Store) Save(input domain.AIProfileInput) (domain.AIProfile, error) {
 			return domain.AIProfile{}, err
 		}
 	}
-	record := s.records[profile.ID]
+	record, existed := s.records[profile.ID]
+	if !existed && len(s.records) >= maxProfiles {
+		return domain.AIProfile{}, fmt.Errorf("maximal %d AI-Profile sind erlaubt", maxProfiles)
+	}
+	hasSecret := record.SecretStored || record.EncryptedKey != ""
+	if input.ClearAPIKey {
+		hasSecret = false
+	} else if strings.TrimSpace(input.APIKey) != "" {
+		hasSecret = true
+	}
+	if len(input.APIKey) > 16*1024 {
+		return domain.AIProfile{}, fmt.Errorf("API-Schlüssel ist zu lang")
+	}
+	if err := validateEndpointSecurity(profile, hasSecret); err != nil {
+		return domain.AIProfile{}, err
+	}
+	previousRecords := cloneProfileRecords(s.records)
+	previousSecret, secretErr := s.currentKeyringSecret(profile.ID, record)
+	if secretErr != nil && (input.ClearAPIKey || strings.TrimSpace(input.APIKey) != "") {
+		return domain.AIProfile{}, secretErr
+	}
+	keyringChanged := false
 	record.Profile = profile
 	if input.ClearAPIKey {
-		record.EncryptedKey = ""
-	} else if strings.TrimSpace(input.APIKey) != "" {
-		record.EncryptedKey, err = s.encrypt(strings.TrimSpace(input.APIKey))
-		if err != nil {
+		if err := deleteKeyringSecret(profile.ID); err != nil {
 			return domain.AIProfile{}, err
 		}
+		keyringChanged = record.SecretStored
+		record.SecretStored = false
+		record.EncryptedKey = ""
+	} else if strings.TrimSpace(input.APIKey) != "" {
+		if err := keyring.Set(keyringService, keyringAccount(profile.ID), strings.TrimSpace(input.APIKey)); err != nil {
+			return domain.AIProfile{}, fmt.Errorf("API-Schlüssel im System-Schlüsselbund speichern: %w", err)
+		}
+		keyringChanged = true
+		record.SecretStored = true
+		record.EncryptedKey = ""
 	}
 	if profile.IsDefault {
 		for id, existing := range s.records {
@@ -109,9 +158,13 @@ func (s *Store) Save(input domain.AIProfileInput) (domain.AIProfile, error) {
 	}
 	s.records[profile.ID] = record
 	if err := s.persist(); err != nil {
+		s.records = previousRecords
+		if keyringChanged {
+			s.restoreKeyringSecret(profile.ID, previousSecret)
+		}
 		return domain.AIProfile{}, err
 	}
-	profile.HasAPIKey = record.EncryptedKey != ""
+	profile.HasAPIKey = record.SecretStored || record.EncryptedKey != ""
 	return profile, nil
 }
 
@@ -121,11 +174,26 @@ func (s *Store) Delete(id string) error {
 	if s.initErr != nil {
 		return s.initErr
 	}
-	if _, found := s.records[id]; !found {
+	record, found := s.records[id]
+	if !found {
 		return fmt.Errorf("AI-Profil %q wurde nicht gefunden", id)
 	}
+	previousSecret, err := s.currentKeyringSecret(id, record)
+	if err != nil {
+		return err
+	}
+	if record.SecretStored {
+		if err := deleteKeyringSecret(id); err != nil {
+			return err
+		}
+	}
 	delete(s.records, id)
-	return s.persist()
+	if err := s.persist(); err != nil {
+		s.records[id] = record
+		s.restoreKeyringSecret(id, previousSecret)
+		return err
+	}
+	return nil
 }
 
 func (s *Store) profileWithSecret(id string) (domain.AIProfile, string, error) {
@@ -138,16 +206,22 @@ func (s *Store) profileWithSecret(id string) (domain.AIProfile, string, error) {
 	if !found {
 		return domain.AIProfile{}, "", fmt.Errorf("AI-Profil %q wurde nicht gefunden", id)
 	}
-	secret := ""
-	var err error
-	if record.EncryptedKey != "" {
-		secret, err = s.decrypt(record.EncryptedKey)
+	if record.SecretStored {
+		secret, err := keyring.Get(keyringService, keyringAccount(id))
+		if err != nil {
+			return domain.AIProfile{}, "", fmt.Errorf("API-Schlüssel aus System-Schlüsselbund lesen: %w", err)
+		}
+		return record.Profile, secret, nil
 	}
-	return record.Profile, secret, err
+	if record.EncryptedKey != "" {
+		secret, err := s.decrypt(record.EncryptedKey)
+		return record.Profile, secret, err
+	}
+	return record.Profile, "", nil
 }
 
 func (s *Store) load() error {
-	data, err := os.ReadFile(s.filePath)
+	data, err := readRegularFile(s.filePath, maxProfileFileBytes)
 	if os.IsNotExist(err) {
 		return nil
 	}
@@ -158,10 +232,65 @@ func (s *Store) load() error {
 	if err := json.Unmarshal(data, &records); err != nil {
 		return fmt.Errorf("AI-Profile sind beschädigt: %w", err)
 	}
+	if len(records) > maxProfiles {
+		return fmt.Errorf("AI-Profildatei enthält zu viele Profile")
+	}
+	migrated := false
+	migrationDeferred := false
+	legacyFallback := make(map[string]profileRecord)
 	for _, record := range records {
 		if record.Profile.ID != "" {
+			if _, duplicate := s.records[record.Profile.ID]; duplicate {
+				return fmt.Errorf("AI-Profildatei enthält doppelte Profil-IDs")
+			}
+			normalised, normaliseErr := normaliseProfile(domain.AIProfileInput{
+				ID: record.Profile.ID, Name: record.Profile.Name, Provider: record.Profile.Provider,
+				BaseURL: record.Profile.BaseURL, Model: record.Profile.Model, IsDefault: record.Profile.IsDefault,
+			})
+			if normaliseErr != nil {
+				return fmt.Errorf("gespeichertes AI-Profil %q ist ungültig: %w", record.Profile.ID, normaliseErr)
+			}
+			record.Profile = normalised
+			if securityErr := validateEndpointSecurity(record.Profile, record.SecretStored || record.EncryptedKey != ""); securityErr != nil {
+				return fmt.Errorf("gespeichertes AI-Profil %q ist unsicher: %w", record.Profile.ID, securityErr)
+			}
+			if record.EncryptedKey != "" {
+				secret, decryptErr := s.decrypt(record.EncryptedKey)
+				if decryptErr != nil {
+					return fmt.Errorf("alten AI-Schlüssel migrieren: %w", decryptErr)
+				}
+				// A Linux desktop can legitimately have no active Secret Service
+				// session (for example over SSH). Keep the legacy ciphertext usable
+				// in that case instead of making every profile unavailable.
+				if setErr := keyring.Set(keyringService, keyringAccount(record.Profile.ID), secret); setErr == nil {
+					legacyFallback[record.Profile.ID] = record
+					record.SecretStored = true
+					record.EncryptedKey = ""
+					migrated = true
+				} else {
+					migrationDeferred = true
+				}
+			}
 			s.records[record.Profile.ID] = record
 		}
+	}
+	if migrationDeferred {
+		for id, record := range legacyFallback {
+			s.records[id] = record
+		}
+		migrated = false
+	}
+	if migrated {
+		if err := s.persist(); err != nil {
+			// The old file is still intact. Restore its in-memory representation
+			// and let the next start retry migration safely.
+			for id, record := range legacyFallback {
+				s.records[id] = record
+			}
+			return nil
+		}
+		_ = os.Remove(s.keyPath)
+		syncStoreDirectory(s.directory)
 	}
 	return nil
 }
@@ -177,9 +306,34 @@ func (s *Store) persist() error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(s.filePath, data, 0o600); err != nil {
+	if len(data) > maxProfileFileBytes {
+		return fmt.Errorf("AI-Profildatei ist zu groß")
+	}
+	temporary, err := os.CreateTemp(s.directory, ".profiles-*.tmp")
+	if err != nil {
+		return fmt.Errorf("AI-Profile vorbereiten: %w", err)
+	}
+	temporaryPath := temporary.Name()
+	defer os.Remove(temporaryPath)
+	if err := temporary.Chmod(0o600); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
 		return fmt.Errorf("AI-Profile schreiben: %w", err)
 	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return fmt.Errorf("AI-Profile synchronisieren: %w", err)
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	if err := replaceStoreFile(temporaryPath, s.filePath); err != nil {
+		return fmt.Errorf("AI-Profile finalisieren: %w", err)
+	}
+	syncStoreDirectory(s.directory)
 	return nil
 }
 
@@ -190,6 +344,9 @@ func normaliseProfile(input domain.AIProfileInput) (domain.AIProfile, error) {
 	}
 	if profile.Name == "" || profile.Model == "" {
 		return domain.AIProfile{}, fmt.Errorf("Profilname und Modell sind erforderlich")
+	}
+	if len([]rune(profile.ID)) > 128 || len([]rune(profile.Name)) > 120 || len([]rune(profile.Model)) > 240 || len(profile.BaseURL) > 2048 {
+		return domain.AIProfile{}, fmt.Errorf("AI-Profildaten überschreiten die erlaubte Länge")
 	}
 	defaults := map[string]string{
 		"ollama": "http://127.0.0.1:11434", "lmstudio": "http://127.0.0.1:1234/v1",
@@ -258,7 +415,7 @@ func (s *Store) decrypt(value string) (string, error) {
 }
 
 func (s *Store) vaultKey() ([]byte, error) {
-	key, err := os.ReadFile(s.keyPath)
+	key, err := readRegularFile(s.keyPath, 32)
 	if err == nil {
 		if len(key) != 32 {
 			return nil, fmt.Errorf("AI-Tresorschlüssel ist beschädigt")
@@ -272,10 +429,58 @@ func (s *Store) vaultKey() ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(s.keyPath, key, 0o600); err != nil {
+	file, err := os.OpenFile(s.keyPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if os.IsExist(err) {
+		return s.vaultKey()
+	}
+	if err != nil {
+		return nil, fmt.Errorf("AI-Tresorschlüssel anlegen: %w", err)
+	}
+	if _, err := file.Write(key); err != nil {
+		file.Close()
 		return nil, fmt.Errorf("AI-Tresorschlüssel schreiben: %w", err)
 	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return nil, fmt.Errorf("AI-Tresorschlüssel synchronisieren: %w", err)
+	}
+	if err := file.Close(); err != nil {
+		return nil, err
+	}
+	syncStoreDirectory(s.directory)
 	return key, nil
+}
+
+func readRegularFile(path string, maximum int64) ([]byte, error) {
+	pathInfo, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if !pathInfo.Mode().IsRegular() || pathInfo.Size() > maximum {
+		return nil, fmt.Errorf("Datei ist ungültig oder zu groß")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	openedInfo, err := file.Stat()
+	if err != nil || !openedInfo.Mode().IsRegular() || !os.SameFile(pathInfo, openedInfo) {
+		return nil, fmt.Errorf("Datei wurde beim Öffnen ausgetauscht")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maximum+1))
+	if err != nil || int64(len(data)) > maximum {
+		return nil, fmt.Errorf("Datei ist zu groß oder nicht lesbar")
+	}
+	postInfo, err := file.Stat()
+	if err != nil || !os.SameFile(openedInfo, postInfo) || int64(len(data)) != openedInfo.Size() {
+		return nil, fmt.Errorf("Datei wurde während des Lesens verändert")
+	}
+	currentInfo, err := os.Lstat(path)
+	if err != nil || !currentInfo.Mode().IsRegular() || !os.SameFile(openedInfo, currentInfo) {
+		return nil, fmt.Errorf("Datei wurde nach dem Lesen ausgetauscht")
+	}
+	return data, nil
 }
 
 func randomID() (string, error) {
@@ -284,4 +489,57 @@ func randomID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(data), nil
+}
+
+func keyringAccount(profileID string) string {
+	return "ai-profile:" + profileID
+}
+
+func deleteKeyringSecret(profileID string) error {
+	err := keyring.Delete(keyringService, keyringAccount(profileID))
+	if err == nil || err == keyring.ErrNotFound {
+		return nil
+	}
+	return fmt.Errorf("API-Schlüssel aus System-Schlüsselbund löschen: %w", err)
+}
+
+func cloneProfileRecords(input map[string]profileRecord) map[string]profileRecord {
+	result := make(map[string]profileRecord, len(input))
+	for id, record := range input {
+		result[id] = record
+	}
+	return result
+}
+
+func (s *Store) currentKeyringSecret(profileID string, record profileRecord) (string, error) {
+	if !record.SecretStored {
+		return "", nil
+	}
+	secret, err := keyring.Get(keyringService, keyringAccount(profileID))
+	if err == keyring.ErrNotFound {
+		// The user must still be able to repair or delete a profile after an
+		// operating-system keychain cleanup removed its credential.
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("vorhandenen API-Schlüssel aus System-Schlüsselbund lesen: %w", err)
+	}
+	return secret, nil
+}
+
+func (s *Store) restoreKeyringSecret(profileID, secret string) {
+	if secret == "" {
+		_ = deleteKeyringSecret(profileID)
+		return
+	}
+	_ = keyring.Set(keyringService, keyringAccount(profileID), secret)
+}
+
+func syncStoreDirectory(directory string) {
+	handle, err := os.Open(directory)
+	if err != nil {
+		return
+	}
+	_ = handle.Sync()
+	_ = handle.Close()
 }

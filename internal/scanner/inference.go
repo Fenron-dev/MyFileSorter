@@ -66,7 +66,10 @@ func inferAuthor(files []domain.AudioFile, folder folderMetadata) (string, domai
 }
 
 func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folderMetadata {
-	if samePath(groupPath, root) || (len(files) == 1 && samePath(groupPath, files[0].Path)) {
+	if len(files) == 1 && samePath(groupPath, files[0].Path) {
+		return folderMetadata{}
+	}
+	if samePath(groupPath, root) && !hasDiscHierarchy(groupPath, files) {
 		return folderMetadata{}
 	}
 	rawName := filepath.Base(groupPath)
@@ -96,6 +99,15 @@ func inferFolderMetadata(root, groupPath string, files []domain.AudioFile) folde
 		}
 	}
 	return result
+}
+
+func hasDiscHierarchy(groupPath string, files []domain.AudioFile) bool {
+	for _, file := range files {
+		if discNumberForPath(groupPath, file.Path) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func extractEditionInfo(value string) string {

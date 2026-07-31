@@ -2,7 +2,9 @@ package naming
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/dennis/myfilesorter/internal/domain"
 )
@@ -20,6 +22,20 @@ func TestBookDirectory(t *testing.T) {
 	}
 }
 
+func TestSegmentShorteningIsBoundedAndCollisionResistant(t *testing.T) {
+	prefix := strings.Repeat("Sehr lang ", 40)
+	first := Segment(prefix + "A")
+	second := Segment(prefix + "B")
+	if first == second {
+		t.Fatal("different long names collapsed to the same segment")
+	}
+	for _, value := range []string{first, second} {
+		if len(value) > 180 || utf8.RuneCountInString(value) > 120 {
+			t.Fatalf("shortened segment exceeds portable bounds: bytes=%d runes=%d", len(value), utf8.RuneCountInString(value))
+		}
+	}
+}
+
 func TestBookDirectoryStandalone(t *testing.T) {
 	got, err := BookDirectory(domain.BookMetadata{Author: "Autor", Title: "Buch"})
 	if err != nil {
@@ -33,6 +49,11 @@ func TestBookDirectoryStandalone(t *testing.T) {
 func TestSegmentIsPortable(t *testing.T) {
 	if got := Segment(`CON`); got != `_CON` {
 		t.Fatalf("Segment(CON) = %q", got)
+	}
+	for _, input := range []string{"CON.txt", "con.backup.txt", "LPT1.cover.jpg"} {
+		if got := Segment(input); got != "_"+input {
+			t.Fatalf("Segment(%q) = %q", input, got)
+		}
 	}
 	if got := Segment(`Titel: Teil/1?`); got != `Titel- Teil-1-` {
 		t.Fatalf("Segment(invalid) = %q", got)
@@ -58,6 +79,29 @@ func TestSequenceWithSelectableWidth(t *testing.T) {
 func TestSourceTrackNameKeepsTitleAndNormalisesSeparators(t *testing.T) {
 	file := domain.AudioFile{Name: "1.Opening_Credits.mp3", Extension: ".mp3", Track: 1}
 	if got := SourceTrackName(file, 1, 12, -1); got != "01 - Opening Credits.mp3" {
+		t.Fatalf("SourceTrackName() = %q", got)
+	}
+}
+
+func TestSourceTrackNamePreservesNumericBookTitles(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		want string
+	}{
+		{"1984.mp3", "01 - 1984.mp3"},
+		{"2001 A Space Odyssey.mp3", "01 - 2001 A Space Odyssey.mp3"},
+		{"2001.A_Space_Odyssey.mp3", "01 - 2001 A Space Odyssey.mp3"},
+	} {
+		file := domain.AudioFile{Name: test.name, Extension: ".mp3", Track: 1}
+		if got := SourceTrackName(file, 1, 1, 2); got != test.want {
+			t.Errorf("SourceTrackName(%q) = %q, want %q", test.name, got, test.want)
+		}
+	}
+}
+
+func TestSourceTrackNameRemovesPlausibleNumericPrefix(t *testing.T) {
+	file := domain.AudioFile{Name: "01 Kapitel.mp3", Extension: ".mp3", Track: 0}
+	if got := SourceTrackName(file, 1, 12, 2); got != "01 - Kapitel.mp3" {
 		t.Fatalf("SourceTrackName() = %q", got)
 	}
 }

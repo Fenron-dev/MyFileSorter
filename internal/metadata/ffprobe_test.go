@@ -1,6 +1,9 @@
 package metadata
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestParseFFProbe(t *testing.T) {
 	input := []byte(`{
@@ -32,5 +35,30 @@ func TestParseFFProbe(t *testing.T) {
 	}
 	if got.DurationMillis != 123500 {
 		t.Fatalf("duration = %d", got.DurationMillis)
+	}
+}
+
+func TestFFProbeArgumentsDisableStdinAndRestrictProtocols(t *testing.T) {
+	path := "/library/book.m4b"
+	arguments := ffprobeArguments(path)
+	for _, required := range []string{"-nostdin", "-hide_banner", "-protocol_whitelist", "file,crypto,data", "-i", path} {
+		if !slices.Contains(arguments, required) {
+			t.Fatalf("missing safe ffprobe argument %q in %#v", required, arguments)
+		}
+	}
+}
+
+func TestCappedBufferBoundsRetainedOutput(t *testing.T) {
+	buffer := newCappedBuffer(5)
+	input := []byte("123456789")
+	written, err := buffer.Write(input)
+	if err != nil || written != len(input) {
+		t.Fatalf("Write() = %d, %v", written, err)
+	}
+	if got := buffer.String(); got != "12345" {
+		t.Fatalf("buffer = %q", got)
+	}
+	if !buffer.Truncated() {
+		t.Fatal("expected output to be marked as truncated")
 	}
 }

@@ -1,0 +1,40 @@
+name: Refresh Go dependency lock
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  refresh:
+    name: Generate verified go.mod and go.sum
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        with:
+          go-version: '1.26.x'
+          cache: false
+
+      - name: Format source and generate module lock files
+        run: |
+          find . -name '*.go' -not -path './vendor/*' -print0 | xargs -0 gofmt -w
+          go mod tidy
+          go mod verify
+          git diff --binary > github-generated.patch
+
+      - name: Upload generated patch and module lock files
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: go-module-lock
+          path: |
+            go.mod
+            go.sum
+            github-generated.patch
+          if-no-files-found: error
+          retention-days: 3

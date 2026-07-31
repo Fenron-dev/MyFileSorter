@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="light" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'none'; object-src 'none'; frame-src 'none'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; form-action 'self'" />
     <title>MyFileSorter</title>
     <link rel="icon" type="image/png" href="/assets/myfilesorter-logo.png" />
     <link rel="stylesheet" href="/styles.css" />
@@ -37,7 +38,14 @@
               <input id="source" placeholder="Ordner mit unsortierten Hörbüchern" />
               <button class="icon-button" id="choose-source" title="Quellordner auswählen">…</button>
             </div>
-            <button class="primary" id="scan">Lokal scannen <span>→</span></button>
+            <div class="source-actions">
+              <button class="primary" id="scan">Lokal scannen <span>→</span></button>
+              <button class="ghost danger hidden" id="cancel-scan" type="button">Scan abbrechen</button>
+            </div>
+            <div class="scan-progress hidden" id="scan-progress" role="status" aria-live="polite">
+              <span class="scan-progress-indicator" aria-hidden="true"></span>
+              <span id="scan-progress-text">Scan wird vorbereitet …</span>
+            </div>
             <div class="drop-hint"><strong>Oder Ordner hier ablegen</strong><span>Audiodateien werden anschließend lokal eingelesen</span></div>
             <p class="privacy-note">Keine Online- oder AI-Anfrage beim Scan.</p>
           </div>
@@ -52,6 +60,38 @@
             <div class="summary" id="summary"></div>
           </div>
           <div class="notice hidden" id="notice"></div>
+          <div class="review-toolbar" aria-label="Vorschläge filtern und gesammelt bearbeiten">
+            <div class="review-filters">
+              <label class="review-search"><span class="sr-only">Vorschläge durchsuchen</span><input id="review-search" type="search" placeholder="Titel, Autor, Serie oder Pfad suchen …" /></label>
+              <label><span class="sr-only">Status filtern</span><select id="review-status">
+                <option value="all">Alle Status</option>
+                <option value="review_required">Zu prüfen</option>
+                <option value="confirmed">Ausgewählt</option>
+                <option value="excluded">Ausgeschlossen</option>
+                <option value="imported">Importiert</option>
+                <option value="conflict">Konflikte</option>
+                <option value="error">Fehler</option>
+              </select></label>
+              <label><span class="sr-only">Sortierung</span><select id="review-sort">
+                <option value="source">Quellreihenfolge</option>
+                <option value="title">Titel A–Z</option>
+                <option value="author">Autor A–Z</option>
+                <option value="confidence_asc">Unsicherste zuerst</option>
+                <option value="status">Status</option>
+              </select></label>
+            </div>
+            <div class="review-bulk">
+              <span id="review-counts" class="review-counts" aria-live="polite"></span>
+              <button class="ghost" id="select-safe-visible" type="button" title="Nur konfliktfreie Vorschläge ohne Warnungen und mit mindestens 75 % Konfidenz auswählen">Sichere sichtbare auswählen</button>
+              <button class="ghost" id="select-visible" type="button">Sichtbare auswählen</button>
+              <button class="ghost" id="deselect-visible" type="button">Sichtbare abwählen</button>
+              <span class="merge-divider" aria-hidden="true"></span>
+              <span id="merge-selected-count" class="merge-selected-count">0 zum Verbinden markiert</span>
+              <button class="ghost" id="clear-merge-selection" type="button">Markierung löschen</button>
+              <button class="ghost merge-action" id="merge-selected" type="button">Markierte zusammenführen</button>
+              <button class="secondary" id="next-review" type="button">Nächstes ungeprüftes</button>
+            </div>
+          </div>
           <div class="review-layout">
             <aside class="book-list" id="book-list"></aside>
             <section class="detail empty" id="detail">
@@ -114,6 +154,13 @@
               <input type="checkbox" id="cleanup-sidecars" />
               <span><strong>Begleitdateien entfernen</strong><small>Cover, NFO, Playlists und CUE nach erfolgreicher Prüfung entfernen; Undo bleibt möglich</small></span>
             </label>
+            <label>
+              <span><strong>Vorhandene Zieldateien</strong><small>Identische Dateien können nach einem SHA-256-Vergleich sicher übersprungen werden</small></span>
+              <select id="existing-file-policy">
+                <option value="error" selected>Als Konflikt behandeln</option>
+                <option value="skip_identical">Identische sicher überspringen</option>
+              </select>
+            </label>
           </div>
           <div id="plan-output"></div>
         </section>
@@ -132,7 +179,7 @@
       <section class="log-dialog">
         <header>
           <div><p class="eyebrow">DIAGNOSE & NACHVOLLZIEHBARKEIT</p><h2 id="log-title">Sitzungslog</h2></div>
-          <div class="log-header-actions"><button class="ghost" id="refresh-log">Aktualisieren</button><button class="panel-close" id="close-log" aria-label="Schließen">×</button></div>
+          <div class="log-header-actions"><label class="log-session-picker"><span class="sr-only">Log-Sitzung</span><select id="log-session-select" aria-label="Log-Sitzung auswählen"></select></label><button class="ghost" id="refresh-log">Aktualisieren</button><button class="panel-close" id="close-log" aria-label="Schließen">×</button></div>
         </header>
         <div id="log-content" class="log-content"></div>
       </section>
@@ -158,7 +205,7 @@
             <label><span>API-Schlüssel</span><input name="apiKey" type="password" autocomplete="new-password" placeholder="Leer lassen, um vorhandenen Schlüssel zu behalten" /><small id="ai-key-state">Für lokale Anbieter meist nicht erforderlich.</small></label>
             <label class="inline-check"><input name="clearApiKey" type="checkbox" /><span>Gespeicherten Schlüssel entfernen</span></label>
             <label class="inline-check"><input name="isDefault" type="checkbox" /><span>Als Standardprofil verwenden</span></label>
-            <p class="profile-security">Schlüssel werden lokal AES-GCM-verschlüsselt gespeichert und niemals im Sitzungslog angezeigt.</p>
+            <p class="profile-security">Schlüssel liegen im System-Schlüsselbund und werden weder an die Oberfläche zurückgegeben noch protokolliert.</p>
             <div class="profile-actions"><button type="button" class="ghost danger hidden" id="delete-ai-profile">Löschen</button><span></span><button type="button" class="ghost" id="test-ai-profile">Verbindung testen</button><button class="primary compact" type="submit">Profil speichern</button></div>
           </form>
         </div>

@@ -11,6 +11,8 @@ var ErrUnavailable = errors.New("embedded metadata reader is unavailable")
 
 type Reader interface {
 	Available() bool
+	// Read may be called concurrently by the scanner. Implementations must be
+	// safe for concurrent use and should honour cancellation promptly.
 	Read(context.Context, string) (domain.EmbeddedMetadata, error)
 }
 
