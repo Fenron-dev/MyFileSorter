@@ -184,7 +184,11 @@ func writeProposalFiles(t *testing.T, proposal domain.BookProposal) {
 		if err := os.MkdirAll(filepath.Dir(file.Path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(file.Path, []byte("audio"), 0o600); err != nil {
+		content := []byte("audio")
+		if file.Size > 0 {
+			content = make([]byte, file.Size)
+		}
+		if err := os.WriteFile(file.Path, content, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -192,7 +196,11 @@ func writeProposalFiles(t *testing.T, proposal domain.BookProposal) {
 		if err := os.MkdirAll(filepath.Dir(file.Path), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(file.Path, []byte("companion"), 0o600); err != nil {
+		content := []byte("companion")
+		if file.Size > 0 {
+			content = make([]byte, file.Size)
+		}
+		if err := os.WriteFile(file.Path, content, 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
