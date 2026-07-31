@@ -1,6 +1,9 @@
 package executor
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -270,7 +273,8 @@ func probeWritableDirectory(root, directory string) error {
 	published := name + ".installed"
 	defer os.Remove(name)
 	defer os.Remove(published)
-	if _, err := probe.Write([]byte("MyFileSorter preflight\n")); err != nil {
+	probeData := []byte("MyFileSorter preflight\n")
+	if _, err := probe.Write(probeData); err != nil {
 		probe.Close()
 		return err
 	}
@@ -299,15 +303,27 @@ func probeWritableDirectory(root, directory string) error {
 	// Exercise the same atomic, no-replace primitive used by real transfers.
 	// A filesystem that cannot provide this guarantee is rejected before any
 	// source file is moved.
-	if err := installFileNoReplace(name, published); err != nil {
+	identityPreserved, err := installFileNoReplace(context.Background(), name, published)
+	if err != nil {
 		return fmt.Errorf("atomare Zielveröffentlichung wird nicht unterstützt: %w", err)
 	}
-	installed, err := os.Lstat(published)
-	if err != nil || !installed.Mode().IsRegular() || !os.SameFile(info, installed) {
-		if err == nil {
-			err = fmt.Errorf("veröffentlichte Schreibprobe wurde ausgetauscht")
+	if identityPreserved {
+		installed, statErr := os.Lstat(published)
+		if statErr != nil || !installed.Mode().IsRegular() || !os.SameFile(info, installed) {
+			if statErr == nil {
+				statErr = fmt.Errorf("veröffentlichte Schreibprobe wurde ausgetauscht")
+			}
+			return statErr
 		}
-		return err
+	} else {
+		expectedHash := sha256.Sum256(probeData)
+		actualHash, actualSize, _, verifyErr := checksumFileWithIdentity(context.Background(), published)
+		if verifyErr != nil || actualHash != hex.EncodeToString(expectedHash[:]) || actualSize != int64(len(probeData)) {
+			if verifyErr == nil {
+				verifyErr = fmt.Errorf("kopierte Schreibprobe stimmt nicht mit dem Original überein")
+			}
+			return verifyErr
+		}
 	}
 	if err := os.Remove(published); err != nil {
 		return err

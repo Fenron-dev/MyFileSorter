@@ -3,6 +3,7 @@
 package executor
 
 import (
+	"context"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -18,10 +19,16 @@ var (
 	moveFileExWProc = kernel32DLL.NewProc("MoveFileExW")
 )
 
-func installFileNoReplace(temporary, target string) error {
+func installFileNoReplace(ctx context.Context, temporary, target string) (bool, error) {
 	// Without MOVEFILE_REPLACE_EXISTING, MoveFileEx fails atomically if the
 	// destination appeared after preflight.
-	return moveFileEx(temporary, target, moveFileWriteThrough)
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	if err := moveFileEx(temporary, target, moveFileWriteThrough); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func replaceFile(temporary, target string) error {

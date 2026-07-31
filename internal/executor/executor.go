@@ -616,7 +616,7 @@ func (s *Service) persistJournal(journal *Journal, replaceExisting bool) error {
 		if err := replaceFile(temporaryName, finalName); err != nil {
 			return err
 		}
-	} else if err := installFileNoReplace(temporaryName, finalName); err != nil {
+	} else if _, err := installFileNoReplace(context.Background(), temporaryName, finalName); err != nil {
 		return fmt.Errorf("neues Journal atomar anlegen: %w", err)
 	}
 	return syncDirectory(directory)
@@ -770,15 +770,26 @@ func (s *Service) transfer(ctx context.Context, source, target string, expectedS
 			return "", 0, "", err
 		}
 	}
-	if err := installFileNoReplace(temporaryName, target); err != nil {
+	identityPreserved, err := installFileNoReplace(ctx, temporaryName, target)
+	if err != nil {
 		return "", 0, "", fmt.Errorf("Zieldatei finalisieren: %w", err)
 	}
-	installedInfo, err := os.Lstat(target)
-	if err != nil || !installedInfo.Mode().IsRegular() || !os.SameFile(temporaryInfo, installedInfo) {
-		if err == nil {
-			err = fmt.Errorf("finalisiertes Ziel wurde ausgetauscht: %s", target)
+	if identityPreserved {
+		installedInfo, statErr := os.Lstat(target)
+		if statErr != nil || !installedInfo.Mode().IsRegular() || !os.SameFile(temporaryInfo, installedInfo) {
+			if statErr == nil {
+				statErr = fmt.Errorf("finalisiertes Ziel wurde ausgetauscht: %s", target)
+			}
+			return "", 0, "", fmt.Errorf("Zieldatei finalisieren: %w", statErr)
 		}
-		return "", 0, "", fmt.Errorf("Zieldatei finalisieren: %w", err)
+	} else {
+		publishedHash, publishedSize, _, verifyErr := checksumFileWithIdentity(ctx, target)
+		if verifyErr != nil || publishedHash != expectedHash || publishedSize != written {
+			if verifyErr == nil {
+				verifyErr = fmt.Errorf("Prüfsummenvergleich des veröffentlichten Ziels fehlgeschlagen: %s", target)
+			}
+			return "", 0, "", fmt.Errorf("Zieldatei finalisieren: %w", verifyErr)
+		}
 	}
 	if err := syncDirectory(filepath.Dir(target)); err != nil {
 		return expectedHash, written, fmt.Sprintf("Zielordner konnte nicht dauerhaft synchronisiert werden; Quelle wurde beibehalten: %v", err), nil

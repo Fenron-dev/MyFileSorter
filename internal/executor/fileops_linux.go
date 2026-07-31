@@ -2,9 +2,13 @@
 
 package executor
 
-import "golang.org/x/sys/unix"
+import (
+	"context"
 
-func installFileNoReplace(temporary, target string) error {
+	"golang.org/x/sys/unix"
+)
+
+func installFileNoReplace(ctx context.Context, temporary, target string) (bool, error) {
 	if err := unix.Renameat2(
 		unix.AT_FDCWD,
 		temporary,
@@ -12,7 +16,7 @@ func installFileNoReplace(temporary, target string) error {
 		target,
 		unix.RENAME_NOREPLACE,
 	); err != nil {
-		return fallbackToHardlink(temporary, target, err)
+		return fallbackToCompatibleInstall(ctx, temporary, target, err)
 	}
-	return nil
+	return true, nil
 }

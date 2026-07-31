@@ -136,7 +136,7 @@ func TestInstallFileNoReplaceRejectsLateCollision(t *testing.T) {
 	writeTestFile(t, temporary, "new")
 	writeTestFile(t, target, "existing")
 
-	if err := installFileNoReplace(temporary, target); err == nil {
+	if _, err := installFileNoReplace(context.Background(), temporary, target); err == nil {
 		t.Fatal("expected atomic finalization to reject an existing target")
 	}
 	if data, err := os.ReadFile(target); err != nil || string(data) != "existing" {
@@ -153,7 +153,7 @@ func TestInstallFileNoReplacePublishesCompletedFile(t *testing.T) {
 	target := filepath.Join(root, "book.m4b")
 	writeTestFile(t, temporary, "complete")
 
-	if err := installFileNoReplace(temporary, target); err != nil {
+	if _, err := installFileNoReplace(context.Background(), temporary, target); err != nil {
 		t.Fatalf("expected completed file to be published: %v", err)
 	}
 	if data, err := os.ReadFile(target); err != nil || string(data) != "complete" {
