@@ -140,7 +140,7 @@ func TestMergePersistedScanReviewKeepsCuratedEditsAndFileDecisions(t *testing.T)
 		Metadata: domain.BookMetadata{
 			Title: "Frischer Titel", Author: "Frischer Autor", Series: "Frische Serie",
 			Evidence: map[string]domain.Evidence{
-				"title": {Value: "Frischer Titel", Source: "folder", Confidence: .4},
+				"title":  {Value: "Frischer Titel", Source: "folder", Confidence: .4},
 				"author": {Value: "Frischer Autor", Source: "folder", Confidence: .4},
 				"series": {Value: "Frische Serie", Source: "folder", Confidence: .4},
 			},
