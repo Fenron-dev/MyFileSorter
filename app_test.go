@@ -130,6 +130,77 @@ func TestStartupReconcilesCompletedImportAndUndo(t *testing.T) {
 	}
 }
 
+func TestMergePersistedScanReviewKeepsCuratedEditsAndFileDecisions(t *testing.T) {
+	root := t.TempDir()
+	firstPath := filepath.Join(root, "01.mp3")
+	secondPath := filepath.Join(root, "02.mp3")
+	coverPath := filepath.Join(root, "cover.jpg")
+	scanned := domain.BookProposal{
+		ID: "stable", SourceRoot: root, GroupPath: root, Status: domain.StatusReviewRequired, Confidence: .4,
+		Metadata: domain.BookMetadata{
+			Title: "Frischer Titel", Author: "Frischer Autor", Series: "Frische Serie",
+			Evidence: map[string]domain.Evidence{
+				"title": {Value: "Frischer Titel", Source: "folder", Confidence: .4},
+				"author": {Value: "Frischer Autor", Source: "folder", Confidence: .4},
+				"series": {Value: "Frische Serie", Source: "folder", Confidence: .4},
+			},
+		},
+		Files: []domain.AudioFile{
+			{Path: firstPath, Name: "01.mp3", Track: 1},
+			{Path: secondPath, Name: "02.mp3", Track: 2},
+		},
+		Companions: []domain.CompanionFile{{Path: coverPath, Name: "cover.jpg", Kind: domain.CompanionDiscard}},
+	}
+	previous := cloneProposal(scanned)
+	previous.Status = domain.StatusConfirmed
+	previous.Confidence = 1
+	previous.Metadata.Title = "Manueller Titel"
+	previous.Metadata.Series = "Online-Serie"
+	previous.Metadata.Author = "Veralteter lokaler Autor"
+	previous.Metadata.Evidence["title"] = domain.Evidence{Value: "Manueller Titel", Source: "manual", Confidence: 1}
+	previous.Metadata.Evidence["series"] = domain.Evidence{Value: "Online-Serie", Source: "online:audible", Confidence: .98}
+	previous.Metadata.Evidence["author"] = domain.Evidence{Value: "Veralteter lokaler Autor", Source: "folder", Confidence: .5}
+	previous.Files = []domain.AudioFile{
+		{Path: secondPath, Name: "02.mp3", Track: 7, TargetTitle: "Finale", Excluded: false},
+		{Path: firstPath, Name: "01.mp3", Track: 3, Excluded: true},
+	}
+	previous.Companions[0].Kind = domain.CompanionUnknown
+
+	merged, restored := mergePersistedScanReview([]domain.BookProposal{scanned}, []domain.BookProposal{previous})
+	if restored != 1 || len(merged) != 1 {
+		t.Fatalf("unexpected merge result: restored=%d proposals=%d", restored, len(merged))
+	}
+	proposal := merged[0]
+	if proposal.Metadata.Title != "Manueller Titel" || proposal.Metadata.Series != "Online-Serie" {
+		t.Fatalf("curated metadata was not restored: %#v", proposal.Metadata)
+	}
+	if proposal.Metadata.Author != "Frischer Autor" {
+		t.Fatalf("fresh local metadata should win over stale local metadata: %q", proposal.Metadata.Author)
+	}
+	if proposal.Status != domain.StatusConfirmed || proposal.Confidence != 1 {
+		t.Fatalf("saved review state was not restored: %#v", proposal)
+	}
+	if len(proposal.Files) != 2 || proposal.Files[0].Path != secondPath || proposal.Files[0].Track != 7 || proposal.Files[0].TargetTitle != "Finale" || !proposal.Files[1].Excluded {
+		t.Fatalf("saved track order or decisions were not restored: %#v", proposal.Files)
+	}
+	if proposal.Companions[0].Kind != domain.CompanionUnknown {
+		t.Fatalf("saved companion decision was not restored: %#v", proposal.Companions)
+	}
+}
+
+func TestMergePersistedScanReviewDoesNotCrossSourceRoots(t *testing.T) {
+	scanned := domain.BookProposal{ID: "same", SourceRoot: filepath.Join(t.TempDir(), "new"), Metadata: domain.BookMetadata{Title: "Neu", Evidence: map[string]domain.Evidence{}}}
+	previous := cloneProposal(scanned)
+	previous.SourceRoot = filepath.Join(t.TempDir(), "old")
+	previous.Metadata.Title = "Alt"
+	previous.Metadata.Evidence["title"] = domain.Evidence{Value: "Alt", Source: "manual", Confidence: 1}
+
+	merged, restored := mergePersistedScanReview([]domain.BookProposal{scanned}, []domain.BookProposal{previous})
+	if restored != 0 || merged[0].Metadata.Title != "Neu" {
+		t.Fatalf("review state from another source root was restored: %#v", merged)
+	}
+}
+
 func newTestApp(t *testing.T, root string) *App {
 	t.Helper()
 	return newTestAppWithStores(root, workspace.New(filepath.Join(root, "workspace")), executor.New(filepath.Join(root, "journals")))

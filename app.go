@@ -189,6 +189,9 @@ func (a *App) Scan(source string) (domain.ScanResult, error) {
 		return domain.ScanResult{}, err
 	}
 	defer finish()
+	a.mu.RLock()
+	previousProposals := cloneProposals(a.proposals)
+	a.mu.RUnlock()
 	a.logger.Info("scan", "Lokaler Scan gestartet", map[string]string{"source": source})
 	result, err := a.scanner.ScanWithProgress(ctx, source, func(progress domain.ScanProgress) {
 		if a.ctx != nil {
@@ -198,6 +201,14 @@ func (a *App) Scan(source string) (domain.ScanResult, error) {
 	if err != nil {
 		a.logger.Error("scan", "Lokaler Scan fehlgeschlagen", map[string]string{"source": source, "error": err.Error()})
 		return domain.ScanResult{}, err
+	}
+	var restored int
+	result.Proposals, restored = mergePersistedScanReview(result.Proposals, previousProposals)
+	if restored > 0 {
+		result.GlobalNotes = append(result.GlobalNotes, fmt.Sprintf(
+			"Gespeicherte Bearbeitungen und Auswahlstände für %d unveränderte Hörbuchgruppe(n) wurden übernommen.",
+			restored,
+		))
 	}
 	a.mu.Lock()
 	a.proposals = cloneProposals(result.Proposals)
@@ -1512,6 +1523,103 @@ func markManualChanges(before domain.BookMetadata, after *domain.BookMetadata) {
 			after.Evidence[field.key] = domain.Evidence{Value: field.current, Source: "manual", Confidence: 1}
 		}
 	}
+}
+
+func mergePersistedScanReview(scanned, persisted []domain.BookProposal) ([]domain.BookProposal, int) {
+	previousByID := make(map[string]domain.BookProposal, len(persisted))
+	for _, proposal := range persisted {
+		previousByID[proposal.ID] = proposal
+	}
+	merged := cloneProposals(scanned)
+	restored := 0
+	for index := range merged {
+		current := &merged[index]
+		previous, found := previousByID[current.ID]
+		if !found || filepath.Clean(previous.SourceRoot) != filepath.Clean(current.SourceRoot) {
+			continue
+		}
+		mergeCuratedMetadata(&current.Metadata, previous.Metadata)
+		current.Status = previous.Status
+		current.ExecutionJournalID = previous.ExecutionJournalID
+		if previous.Confidence > current.Confidence {
+			current.Confidence = previous.Confidence
+		}
+		for _, warning := range previous.Warnings {
+			current.Warnings = appendUnique(current.Warnings, warning)
+		}
+
+		freshFiles := make(map[string]domain.AudioFile, len(current.Files))
+		for _, file := range current.Files {
+			freshFiles[filepath.Clean(file.Path)] = file
+		}
+		orderedFiles := make([]domain.AudioFile, 0, len(current.Files))
+		seenFiles := make(map[string]bool, len(current.Files))
+		for _, savedFile := range previous.Files {
+			key := filepath.Clean(savedFile.Path)
+			freshFile, exists := freshFiles[key]
+			if !exists {
+				continue
+			}
+			freshFile.Track = savedFile.Track
+			freshFile.Disc = savedFile.Disc
+			freshFile.TargetTitle = savedFile.TargetTitle
+			freshFile.Excluded = savedFile.Excluded
+			orderedFiles = append(orderedFiles, freshFile)
+			seenFiles[key] = true
+		}
+		for _, freshFile := range current.Files {
+			if !seenFiles[filepath.Clean(freshFile.Path)] {
+				orderedFiles = append(orderedFiles, freshFile)
+			}
+		}
+		current.Files = orderedFiles
+
+		previousCompanions := make(map[string]domain.CompanionKind, len(previous.Companions))
+		for _, companion := range previous.Companions {
+			previousCompanions[filepath.Clean(companion.Path)] = companion.Kind
+		}
+		for companionIndex := range current.Companions {
+			if kind, exists := previousCompanions[filepath.Clean(current.Companions[companionIndex].Path)]; exists {
+				current.Companions[companionIndex].Kind = kind
+			}
+		}
+		restored++
+	}
+	return merged, restored
+}
+
+func mergeCuratedMetadata(current *domain.BookMetadata, previous domain.BookMetadata) {
+	if current.Evidence == nil {
+		current.Evidence = make(map[string]domain.Evidence)
+	}
+	type metadataField struct {
+		key string
+		get func(domain.BookMetadata) string
+		set func(*domain.BookMetadata, string)
+	}
+	fields := []metadataField{
+		{"title", func(value domain.BookMetadata) string { return value.Title }, func(value *domain.BookMetadata, text string) { value.Title = text }},
+		{"author", func(value domain.BookMetadata) string { return value.Author }, func(value *domain.BookMetadata, text string) { value.Author = text }},
+		{"series", func(value domain.BookMetadata) string { return value.Series }, func(value *domain.BookMetadata, text string) { value.Series = text }},
+		{"seriesSequence", func(value domain.BookMetadata) string { return value.SeriesSequence }, func(value *domain.BookMetadata, text string) { value.SeriesSequence = text }},
+		{"editionInfo", func(value domain.BookMetadata) string { return value.EditionInfo }, func(value *domain.BookMetadata, text string) { value.EditionInfo = text }},
+		{"narrator", func(value domain.BookMetadata) string { return value.Narrator }, func(value *domain.BookMetadata, text string) { value.Narrator = text }},
+		{"language", func(value domain.BookMetadata) string { return value.Language }, func(value *domain.BookMetadata, text string) { value.Language = text }},
+		{"asin", func(value domain.BookMetadata) string { return value.ASIN }, func(value *domain.BookMetadata, text string) { value.ASIN = text }},
+		{"isbn", func(value domain.BookMetadata) string { return value.ISBN }, func(value *domain.BookMetadata, text string) { value.ISBN = text }},
+	}
+	for _, field := range fields {
+		evidence, found := previous.Evidence[field.key]
+		if !found || !isCuratedEvidence(evidence.Source) {
+			continue
+		}
+		field.set(current, field.get(previous))
+		current.Evidence[field.key] = evidence
+	}
+}
+
+func isCuratedEvidence(source string) bool {
+	return source == "manual" || strings.HasPrefix(source, "online:") || strings.HasPrefix(source, "ai:")
 }
 
 func applyCandidate(meta *domain.BookMetadata, candidate domain.MetadataCandidate) {

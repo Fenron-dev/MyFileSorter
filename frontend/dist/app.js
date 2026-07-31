@@ -668,11 +668,22 @@ async function saveDirtyDraft(showToast = false) {
 }
 
 async function selectProposal(id) {
-  if (id === state.selectedId) return;
+  if (id === state.selectedId) {
+    scrollDetailToTop();
+    return;
+  }
   if (state.dirtyProposalId && !await saveDirtyDraft()) return;
   state.selectedId = id;
   state.dirtyProposalId = null;
   render();
+  scrollDetailToTop();
+}
+
+function scrollDetailToTop(behavior = "auto") {
+  const detail = $("#detail-scroll");
+  if (!detail) return;
+  if (typeof detail.scrollTo === "function") detail.scrollTo({ top: 0, left: 0, behavior });
+  else detail.scrollTop = 0;
 }
 
 async function withSavedDraft(action) {
@@ -1033,38 +1044,41 @@ function renderDetail() {
   const m = proposal.metadata;
   detail.className = "detail";
   detail.innerHTML = `
-    <div class="detail-header">
-      <div>
-        <p class="detail-kicker">LOKALER VORSCHLAG · ${Math.round(proposal.confidence * 100)} %</p>
-        <h3>${escapeHTML(displayBookTitle(proposal))}</h3>
-        <p>${escapeHTML(m.author)}</p>
+    <div class="detail-scroll" id="detail-scroll">
+      <div class="detail-header">
+        <div>
+          <p class="detail-kicker">LOKALER VORSCHLAG · ${Math.round(proposal.confidence * 100)} %</p>
+          <h3>${escapeHTML(displayBookTitle(proposal))}</h3>
+          <p>${escapeHTML(m.author)}</p>
+        </div>
+        <span class="status-pill ${statusClass(proposal.status)}">${escapeHTML(statusLabel(proposal.status))}</span>
       </div>
-      <span class="status-pill ${statusClass(proposal.status)}">${escapeHTML(statusLabel(proposal.status))}</span>
+      <div class="source-location">
+        <span>AKTUELLER ORDNER</span>
+        <strong title="${escapeHTML(currentSourceFolder(proposal))}">${escapeHTML(currentSourceFolder(proposal))}</strong>
+      </div>
+      ${proposal.warnings?.length ? `<div class="warning-list">${proposal.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
+      <form id="metadata-form" class="metadata-form">
+        ${field("Titel", "title", m.title, evidence(m, "title"), true)}
+        ${field("Autor", "author", m.author, evidence(m, "author"), true)}
+        ${field("Serie", "series", m.series, evidence(m, "series"))}
+        ${field("Band", "seriesSequence", m.seriesSequence, evidence(m, "seriesSequence"))}
+        ${field("Info", "editionInfo", m.editionInfo, evidence(m, "editionInfo"))}
+        ${field("Sprecher", "narrator", m.narrator, evidence(m, "narrator"))}
+        ${field("Sprache", "language", m.language, evidence(m, "language"))}
+        ${field("ASIN", "asin", m.asin, evidence(m, "asin"))}
+        ${field("ISBN", "isbn", m.isbn, evidence(m, "isbn"))}
+      </form>
+      ${renderTrackEditor(proposal)}
+      ${renderCompanions(proposal)}
+      <div class="online-panel hidden" id="online-panel"></div>
     </div>
-    <div class="source-location">
-      <span>AKTUELLER ORDNER</span>
-      <strong title="${escapeHTML(currentSourceFolder(proposal))}">${escapeHTML(currentSourceFolder(proposal))}</strong>
-    </div>
-    ${proposal.warnings?.length ? `<div class="warning-list">${proposal.warnings.map(escapeHTML).join("<br>")}</div>` : ""}
-    <form id="metadata-form" class="metadata-form">
-      ${field("Titel", "title", m.title, evidence(m, "title"), true)}
-      ${field("Autor", "author", m.author, evidence(m, "author"), true)}
-      ${field("Serie", "series", m.series, evidence(m, "series"))}
-      ${field("Band", "seriesSequence", m.seriesSequence, evidence(m, "seriesSequence"))}
-      ${field("Info", "editionInfo", m.editionInfo, evidence(m, "editionInfo"))}
-      ${field("Sprecher", "narrator", m.narrator, evidence(m, "narrator"))}
-      ${field("Sprache", "language", m.language, evidence(m, "language"))}
-      ${field("ASIN", "asin", m.asin, evidence(m, "asin"))}
-      ${field("ISBN", "isbn", m.isbn, evidence(m, "isbn"))}
-    </form>
-    ${renderTrackEditor(proposal)}
-    ${renderCompanions(proposal)}
-    <div class="online-panel hidden" id="online-panel"></div>
     <div class="actions">
       <button class="ghost" id="online">Online suchen</button>
       <button class="ghost" id="ai">Mit AI analysieren</button>
       <label class="ready-toggle"><input type="checkbox" id="detail-ready" ${proposal.status === "confirmed" || proposal.status === "imported" ? "checked" : ""} ${proposal.status === "imported" ? "disabled" : ""} /> Für Import auswählen</label>
       <span class="action-spacer"></span>
+      <button class="ghost scroll-detail-top" id="scroll-detail-top" type="button" title="Zum Anfang dieser Detailansicht">↑ Nach oben</button>
       <button class="ghost danger" id="exclude">Überspringen</button>
       <button class="secondary" id="save">Änderungen speichern</button>
       <button class="primary compact" id="confirm">Fertig & auswählen</button>
@@ -1081,6 +1095,7 @@ function renderDetail() {
   $("#exclude").addEventListener("click", () => withSavedDraft((current) => setStatus(current.id, "excluded")));
   $("#online").addEventListener("click", () => withSavedDraft((current) => showProviderChoice(current)));
   $("#ai").addEventListener("click", () => withSavedDraft((current) => showAIChoice(current)));
+  $("#scroll-detail-top").addEventListener("click", () => scrollDetailToTop("smooth"));
   setupTrackEditor(proposal);
   setupCompanionEditor(proposal);
 }
@@ -1211,6 +1226,7 @@ async function splitSelectedTracks(proposalId) {
       updateScanSummary();
       render();
     }
+    scrollDetailToTop();
     toast("Tracks wurden als neuer Vorschlag abgetrennt. Beide Vorschläge bitte prüfen.");
   } catch (error) {
     toast(`Aufteilen fehlgeschlagen: ${String(error)}`, true);
@@ -1297,6 +1313,7 @@ async function mergeSelectedProposals() {
       updateScanSummary();
       render();
     }
+    scrollDetailToTop();
     toast(`${ids.length} Vorschläge wurden zusammengeführt. Reihenfolge und Metadaten bitte prüfen.`);
   } catch (error) {
     toast(`Zusammenführen fehlgeschlagen: ${String(error)}`, true);
@@ -1324,6 +1341,7 @@ async function selectNextReview() {
   state.selectedId = next.id;
   state.dirtyProposalId = null;
   render();
+  scrollDetailToTop();
   [...document.querySelectorAll(".book-item")].find((item) => item.dataset.id === next.id)?.scrollIntoView({ block: "nearest" });
 }
 
@@ -2039,8 +2057,28 @@ async function deleteAIProfile() {
 }
 
 async function restorePersistedReview() {
+  let proposals = [];
+  let lastError = null;
+  const expectsDesktopAPI = Boolean(window.runtime);
+  const attempts = expectsDesktopAPI ? 8 : 1;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (expectsDesktopAPI && !window.go?.main?.App) {
+      lastError = new Error("Die Desktop-Schnittstelle ist beim Start noch nicht verfügbar.");
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 150));
+      continue;
+    }
+    try {
+      proposals = await api().GetProposals();
+      lastError = null;
+      if (proposals?.length || attempt + 1 === attempts || !expectsDesktopAPI) break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    } catch (error) {
+      lastError = error;
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+  }
   try {
-    const proposals = await api().GetProposals();
+    if (lastError) throw lastError;
     if (!proposals?.length) return;
     state.proposals = proposals;
     state.reviewLimit = 200;
@@ -2056,6 +2094,7 @@ async function restorePersistedReview() {
     notice.textContent = "Die zuletzt gespeicherte Prüfsitzung wurde wiederhergestellt. Quelldateien werden vor einer Ausführung erneut geprüft.";
     notice.classList.remove("hidden");
     render();
+    $("#workspace").scrollIntoView({ behavior: "auto", block: "start" });
   } catch (error) {
     toast(`Gespeicherte Prüfsitzung konnte nicht geladen werden: ${String(error)}`, true);
   }

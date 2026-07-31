@@ -102,8 +102,9 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .status-pill.confirmed { color: #2e6950; background: #d9ecdf; }
 .status-pill.excluded { color: #666; background: #e5e3df; }
 .status-pill.imported { color: #24577d; background: #dcebf5; }
-.detail { padding: 28px 30px; overflow: auto; }
+.detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .detail.empty { display: grid; place-items: center; color: #8a857d; }
+.detail-scroll { min-height: 0; padding: 28px 30px 20px; flex: 1; overflow: auto; }
 .detail-header { display: flex; justify-content: space-between; align-items: start; padding-bottom: 20px; border-bottom: 1px solid #e0dbd2; }
 .detail-header h3 { margin: 4px 0 5px; font-family: Georgia, serif; font-size: 29px; font-weight: 500; }
 .detail-header p:last-child { margin: 0; color: #6f756f; }
@@ -167,8 +168,9 @@ input:focus { border-color: #3f7668; box-shadow: 0 0 0 3px rgba(63,118,104,.12);
 .companion-move-controls button { padding: 8px 10px; font-size: 8px; }
 .companion-kind { width: max-content; padding: 3px 6px; border-radius: 12px; color: #27634d; background: #dcece2; font-size: 8px; font-weight: 900; text-transform: uppercase; }
 .companion-kind.discard { color: #805a32; background: #f3e3c9; }
-.actions { margin-top: 20px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.actions { z-index: 4; padding: 13px 30px 16px; display: flex; align-items: center; gap: 8px; flex: 0 0 auto; flex-wrap: wrap; border-top: 1px solid rgba(205, 199, 189, .92); background: rgba(251, 250, 246, .96); box-shadow: 0 -10px 24px rgba(40, 48, 44, .08); backdrop-filter: blur(10px); }
 .actions #save.dirty { color: #7a5426; border-color: #d7b77f; background: #fff6df; }
+.scroll-detail-top { white-space: nowrap; }
 .ready-toggle { padding: 9px 10px; display: flex; align-items: center; gap: 7px; color: #315d4e; border: 1px solid #bfd1c8; border-radius: 9px; background: #edf5f0; font-size: 10px; font-weight: 800; cursor: pointer; }
 .ready-toggle input { width: 15px; height: 15px; accent-color: #35765d; }
 .action-spacer { flex: 1; }
